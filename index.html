@@ -1,0 +1,2335 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAMGrade — Pemeriksa LJK Pilihan Ganda</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Space Grotesk (Display) & Inter (Body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700;800&display=swap" rel="stylesheet">
+
+  <!-- jsPDF for PDF Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- SheetJS (xlsx) for Excel Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <!-- Tailwind Custom Theme Configuration -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: '#0B1D3A',
+            navyLight: '#16325B',
+            skyNeo: '#7DD3FC',
+            skySoft: '#BAE6FD',
+            cream: '#FDF8EE',
+            creamDark: '#F3E9D2',
+            coralNeo: '#FDA4AF',
+            mintNeo: '#86EFAC',
+            amberNeo: '#FDE047'
+          },
+          fontFamily: {
+            display: ['"Space Grotesk"', 'sans-serif'],
+            sans: ['Inter', 'sans-serif']
+          },
+          boxShadow: {
+            neo: '4px 4px 0px 0px #0B1D3A',
+            neoLg: '6px 6px 0px 0px #0B1D3A',
+            neoSm: '2px 2px 0px 0px #0B1D3A'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Neo-Brutalist Global Base Styles */
+    body {
+      background-color: #FDF8EE;
+      background-image: radial-gradient(rgba(11, 29, 58, 0.12) 1.25px, transparent 1.25px);
+      background-size: 20px 20px;
+      color: #0B1D3A;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    h1, h2, h3, h4, .font-display {
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    .neo-card {
+      background-color: #FFFFFF;
+      border: 3px solid #0B1D3A;
+      border-radius: 0.75rem;
+      box-shadow: 5px 5px 0px 0px #0B1D3A;
+    }
+
+    .neo-btn {
+      border: 3px solid #0B1D3A;
+      border-radius: 0.65rem;
+      box-shadow: 4px 4px 0px 0px #0B1D3A;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      transition: transform 0.1s ease, box-shadow 0.1s ease, background-color 0.15s ease;
+    }
+
+    .neo-btn:hover:not(:disabled) {
+      transform: translate(-1px, -1px);
+      box-shadow: 5px 5px 0px 0px #0B1D3A;
+    }
+
+    .neo-btn:active:not(:disabled) {
+      transform: translate(3px, 3px);
+      box-shadow: 0px 0px 0px 0px #0B1D3A;
+    }
+
+    .neo-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .neo-input {
+      border: 2.5px solid #0B1D3A;
+      border-radius: 0.6rem;
+      background-color: #FDF8EE;
+      color: #0B1D3A;
+      font-weight: 600;
+      transition: box-shadow 0.15s ease, background-color 0.15s ease;
+    }
+
+    .neo-input:focus {
+      outline: none;
+      background-color: #FFFFFF;
+      box-shadow: 3px 3px 0px 0px #7DD3FC;
+    }
+
+    /* Hide scrollbar for horizontal sub-tabs */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Scanning laser animation */
+    @keyframes scanLine {
+      0% { top: 8%; }
+      50% { top: 88%; }
+      100% { top: 8%; }
+    }
+    .scan-laser {
+      animation: scanLine 2.4s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen pb-28">
+
+  <!-- ==================== TOP APP HEADER ==================== -->
+  <header class="sticky top-0 z-30 bg-navy text-cream border-b-4 border-navy shadow-neoSm">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-skyNeo text-navy border-2 border-cream rounded-lg flex items-center justify-center font-display font-extrabold text-xl shadow-[2px_2px_0px_0px_#FDF8EE]">
+          BG
+        </div>
+        <div>
+          <h1 class="font-display font-extrabold text-lg sm:text-xl leading-tight tracking-tight text-cream">
+            SAM<span class="text-skyNeo">GRADE</span>
+          </h1>
+          <p class="text-[11px] sm:text-xs text-skySoft/90 font-medium truncate max-w-[180px] sm:max-w-xs" id="headerSubtitle">
+            Pemeriksa LJK Pilihan Ganda
+          </p>
+        </div>
+      </div>
+
+      <!-- Sync / Database Status Pill -->
+      <div id="dbStatusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-navyLight border-2 border-skyNeo text-xs font-display font-bold text-cream">
+        <span id="dbStatusDot" class="w-2.5 h-2.5 rounded-full bg-amberNeo animate-pulse"></span>
+        <span id="dbStatusText">Menghubungkan...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN CONTENT CONTAINER ==================== -->
+  <main class="max-w-5xl mx-auto px-4 pt-5 space-y-6">
+
+    <!-- ========================================================== -->
+    <!-- TAB 1: KONFIGURASI KOP & LEMBAR JAWABAN                    -->
+    <!-- ========================================================== -->
+    <section id="tab-config" class="space-y-5">
+      <!-- Sub-navigation Pills for Config -->
+      <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+        <button data-subtab="kop" class="config-subtab neo-btn px-4 py-2 text-sm bg-skyNeo text-navy shrink-0">
+          1. KOP Ujian
+        </button>
+        <button data-subtab="ljk" class="config-subtab neo-btn px-4 py-2 text-sm bg-white text-navy shrink-0">
+          2. Format LJK
+        </button>
+        <button data-subtab="kunci" class="config-subtab neo-btn px-4 py-2 text-sm bg-white text-navy shrink-0">
+          3. Kunci Jawaban
+        </button>
+        <button data-subtab="preview" class="config-subtab neo-btn px-4 py-2 text-sm bg-white text-navy shrink-0">
+          4. Preview &amp; Unduh LJK
+        </button>
+      </div>
+
+      <!-- SUBTAB 1A: KOP UJIAN -->
+      <div id="subtab-kop" class="config-panel neo-card p-5 sm:p-6 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b-2 border-navy pb-3">
+          <div>
+            <h2 class="font-display font-extrabold text-xl text-navy">Identitas KOP Ujian</h2>
+            <p class="text-xs sm:text-sm text-navy/70">Informasi ini akan tercetak di bagian atas Lembar Jawaban (LJK).</p>
+          </div>
+          <span class="px-3 py-1 bg-skySoft border-2 border-navy rounded-md text-xs font-display font-bold">LANGKAH 1/4</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="sm:col-span-2">
+            <label class="block font-display font-bold text-sm mb-1.5" for="inpSchool">Nama Sekolah / Instansi</label>
+            <input id="inpSchool" type="text" class="neo-input w-full px-3.5 py-2.5" placeholder="Contoh: SMA Negeri 1 Palu" />
+          </div>
+
+          <div class="sm:col-span-2">
+            <label class="block font-display font-bold text-sm mb-1.5" for="inpTitle">Judul Ujian</label>
+            <input id="inpTitle" type="text" class="neo-input w-full px-3.5 py-2.5" placeholder="Contoh: Penilaian Tengah Semester (PTS) Ganjil" />
+          </div>
+
+          <div>
+            <label class="block font-display font-bold text-sm mb-1.5" for="inpSubject">Mata Pelajaran</label>
+            <input id="inpSubject" type="text" class="neo-input w-full px-3.5 py-2.5" placeholder="Contoh: Matematika Wajib" />
+          </div>
+
+          <div>
+            <label class="block font-display font-bold text-sm mb-1.5" for="inpClass">Kelas</label>
+            <input id="inpClass" type="text" class="neo-input w-full px-3.5 py-2.5" placeholder="Contoh: XI IPA 1" />
+          </div>
+
+          <div>
+            <label class="block font-display font-bold text-sm mb-1.5" for="inpKKM">KKM (Nilai Ketuntasan Minimal)</label>
+            <input id="inpKKM" type="number" min="0" max="100" class="neo-input w-full px-3.5 py-2.5" placeholder="75" />
+          </div>
+        </div>
+
+        <div class="flex flex-wrap justify-end gap-3 pt-2">
+          <button id="btnSaveKop" class="neo-btn px-5 py-2.5 bg-navy text-cream text-sm">
+            Simpan KOP
+          </button>
+          <button data-goto-subtab="ljk" class="neo-btn px-5 py-2.5 bg-skyNeo text-navy text-sm">
+            Lanjut ke Format LJK &rarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- SUBTAB 1B: FORMAT LEMBAR JAWABAN -->
+      <div id="subtab-ljk" class="config-panel hidden neo-card p-5 sm:p-6 space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b-2 border-navy pb-3">
+          <div>
+            <h2 class="font-display font-extrabold text-xl text-navy">Pengaturan Lembar Jawaban</h2>
+            <p class="text-xs sm:text-sm text-navy/70">Sesuaikan digit NIS, jumlah soal PG, opsi jawaban, dan kolom.</p>
+          </div>
+          <span class="px-3 py-1 bg-skySoft border-2 border-navy rounded-md text-xs font-display font-bold">LANGKAH 2/4</span>
+        </div>
+
+        <!-- Digit NIS -->
+        <div>
+          <label class="block font-display font-bold text-sm mb-2">Jumlah Digit NIS (Nomor Induk Siswa)</label>
+          <div class="flex flex-wrap gap-2.5" id="grpDigitNis">
+            <button type="button" data-val="4" class="opt-nis neo-btn px-4 py-2 text-sm bg-white">4 Digit</button>
+            <button type="button" data-val="5" class="opt-nis neo-btn px-4 py-2 text-sm bg-white">5 Digit</button>
+            <button type="button" data-val="6" class="opt-nis neo-btn px-4 py-2 text-sm bg-white">6 Digit</button>
+            <button type="button" data-val="8" class="opt-nis neo-btn px-4 py-2 text-sm bg-white">8 Digit</button>
+            <button type="button" data-val="10" class="opt-nis neo-btn px-4 py-2 text-sm bg-white">10 Digit</button>
+          </div>
+        </div>
+
+        <!-- Jumlah Soal PG -->
+        <div>
+          <label class="block font-display font-bold text-sm mb-2">Jumlah Soal Pilihan Ganda</label>
+          <div class="flex flex-wrap gap-2.5" id="grpNumQuestions">
+            <button type="button" data-val="20" class="opt-q neo-btn px-4 py-2 text-sm bg-white">20 Soal</button>
+            <button type="button" data-val="25" class="opt-q neo-btn px-4 py-2 text-sm bg-white">25 Soal</button>
+            <button type="button" data-val="30" class="opt-q neo-btn px-4 py-2 text-sm bg-white">30 Soal</button>
+            <button type="button" data-val="35" class="opt-q neo-btn px-4 py-2 text-sm bg-white">35 Soal</button>
+            <button type="button" data-val="40" class="opt-q neo-btn px-4 py-2 text-sm bg-white">40 Soal</button>
+          </div>
+        </div>
+
+        <!-- Opsi Jawaban -->
+        <div>
+          <label class="block font-display font-bold text-sm mb-2">Opsi Jawaban</label>
+          <div class="flex flex-wrap gap-2.5" id="grpOptionType">
+            <button type="button" data-val="A-C" class="opt-type neo-btn px-5 py-2 text-sm bg-white">A - C (3 Opsi)</button>
+            <button type="button" data-val="A-D" class="opt-type neo-btn px-5 py-2 text-sm bg-white">A - D (4 Opsi)</button>
+            <button type="button" data-val="A-E" class="opt-type neo-btn px-5 py-2 text-sm bg-white">A - E (5 Opsi)</button>
+          </div>
+        </div>
+
+        <!-- Jumlah Kolom -->
+        <div>
+          <label class="block font-display font-bold text-sm mb-2">Jumlah Kolom Soal pada Kertas</label>
+          <div class="flex flex-wrap gap-2.5" id="grpColumns">
+            <button type="button" data-val="2" class="opt-col neo-btn px-5 py-2 text-sm bg-white">2 Kolom</button>
+            <button type="button" data-val="3" class="opt-col neo-btn px-5 py-2 text-sm bg-white">3 Kolom</button>
+            <button type="button" data-val="4" class="opt-col neo-btn px-5 py-2 text-sm bg-white">4 Kolom</button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap justify-between gap-3 pt-2">
+          <button data-goto-subtab="kop" class="neo-btn px-4 py-2.5 bg-creamDark text-navy text-sm">
+            &larr; Kembali
+          </button>
+          <div class="flex gap-3">
+            <button id="btnSaveFormat" class="neo-btn px-5 py-2.5 bg-navy text-cream text-sm">
+              Simpan Format
+            </button>
+            <button data-goto-subtab="kunci" class="neo-btn px-5 py-2.5 bg-skyNeo text-navy text-sm">
+              Atur Kunci Jawaban &rarr;
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 1C: KUNCI JAWABAN -->
+      <div id="subtab-kunci" class="config-panel hidden neo-card p-5 sm:p-6 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b-2 border-navy pb-3">
+          <div>
+            <h2 class="font-display font-extrabold text-xl text-navy">Kunci Jawaban</h2>
+            <p class="text-xs sm:text-sm text-navy/70">Klik huruf jawaban benar untuk setiap nomor soal.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="keyProgressBadge" class="px-3 py-1 bg-amberNeo border-2 border-navy rounded-md text-xs font-display font-bold">
+              Terisi: 0 / 20
+            </span>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2.5">
+          <button id="btnRandomKeys" class="neo-btn px-3.5 py-2 bg-creamDark text-navy text-xs sm:text-sm">
+            Isi Acak (Demo)
+          </button>
+          <button id="btnClearKeys" class="neo-btn px-3.5 py-2 bg-coralNeo text-navy text-xs sm:text-sm">
+            Reset Semua Kunci
+          </button>
+        </div>
+
+        <!-- Dynamic Answer Key Grid -->
+        <div id="answerKeyGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+
+        <div class="flex flex-wrap justify-between gap-3 pt-2">
+          <button data-goto-subtab="ljk" class="neo-btn px-4 py-2.5 bg-creamDark text-navy text-sm">
+            &larr; Kembali
+          </button>
+          <div class="flex gap-3">
+            <button id="btnSaveKeys" class="neo-btn px-5 py-2.5 bg-navy text-cream text-sm">
+              Simpan Kunci
+            </button>
+            <button data-goto-subtab="preview" class="neo-btn px-5 py-2.5 bg-skyNeo text-navy text-sm">
+              Preview &amp; Unduh LJK &rarr;
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 1D: PREVIEW & EKSPOR LJK -->
+      <div id="subtab-preview" class="config-panel hidden neo-card p-5 sm:p-6 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b-2 border-navy pb-3">
+          <div>
+            <h2 class="font-display font-extrabold text-xl text-navy">Preview &amp; Unduh Lembar Jawaban</h2>
+            <p class="text-xs sm:text-sm text-navy/70">Format kertas A4 siap cetak dengan 4 penanda sudut untuk pemindaian kamera.</p>
+          </div>
+          <div class="flex flex-wrap gap-2.5">
+            <button id="btnDownloadPNG" class="neo-btn px-4 py-2 bg-skyNeo text-navy text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3"/></svg>
+              Unduh PNG
+            </button>
+            <button id="btnDownloadPDF" class="neo-btn px-4 py-2 bg-navy text-cream text-sm flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              Unduh PDF (A4)
+            </button>
+          </div>
+        </div>
+
+        <!-- A4 Canvas Preview Container -->
+        <div class="bg-creamDark border-3 border-navy rounded-xl p-3 sm:p-5 flex justify-center overflow-auto">
+          <canvas id="ljkCanvas" class="w-full max-w-[680px] h-auto bg-white border-2 border-navy shadow-neo"></canvas>
+        </div>
+
+        <div class="flex justify-between pt-1">
+          <button data-goto-subtab="kunci" class="neo-btn px-4 py-2.5 bg-creamDark text-navy text-sm">
+            &larr; Kembali ke Kunci
+          </button>
+          <button onclick="switchMainTab('scan')" class="neo-btn px-5 py-2.5 bg-mintNeo text-navy text-sm">
+            Mulai Pindai LJK &rarr;
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- TAB 2: PINDAI KAMERA / UNGGAH FOTO                         -->
+    <!-- ========================================================== -->
+    <section id="tab-scan" class="hidden space-y-5">
+      <!-- Scanner Control Card -->
+      <div class="neo-card p-5 sm:p-6 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b-2 border-navy pb-3">
+          <div>
+            <h2 class="font-display font-extrabold text-xl text-navy">Pindai Lembar Jawaban (LJK)</h2>
+            <p class="text-xs sm:text-sm text-navy/70">Gunakan kamera HP, unggah foto LJK, atau uji dengan simulasi.</p>
+          </div>
+          <span id="scanConfigSummary" class="px-3 py-1 bg-skySoft border-2 border-navy rounded-md text-xs font-display font-bold">
+            20 Soal | A-D
+          </span>
+        </div>
+
+        <!-- Action Buttons Row -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button id="btnToggleCamera" class="neo-btn py-3 px-4 bg-skyNeo text-navy text-sm flex items-center justify-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+            <span id="btnCameraLabel">Buka Kamera</span>
+          </button>
+
+          <label class="neo-btn py-3 px-4 bg-white text-navy text-sm flex items-center justify-center gap-2 cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span>Unggah Foto</span>
+            <input id="inpPhotoFile" type="file" accept="image/*" class="hidden" />
+          </label>
+
+          <button id="btnSimulateScan" class="neo-btn py-3 px-4 bg-amberNeo text-navy text-sm flex items-center justify-center gap-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <span>Simulasi Pindai</span>
+          </button>
+        </div>
+
+        <!-- Live Camera Viewfinder -->
+        <div id="cameraContainer" class="hidden space-y-3">
+          <div class="relative w-full aspect-[3/4] sm:aspect-video bg-navy rounded-xl border-3 border-navy overflow-hidden">
+            <video id="cameraVideo" autoplay playsinline class="w-full h-full object-cover"></video>
+            <!-- Alignment Corner Guides -->
+            <div class="pointer-events-none absolute inset-4 sm:inset-8 border-2 border-dashed border-skyNeo/80 rounded-lg">
+              <div class="absolute -top-1 -left-1 w-7 h-7 border-t-4 border-l-4 border-skyNeo"></div>
+              <div class="absolute -top-1 -right-1 w-7 h-7 border-t-4 border-r-4 border-skyNeo"></div>
+              <div class="absolute -bottom-1 -left-1 w-7 h-7 border-b-4 border-l-4 border-skyNeo"></div>
+              <div class="absolute -bottom-1 -right-1 w-7 h-7 border-b-4 border-r-4 border-skyNeo"></div>
+            </div>
+            <div class="absolute bottom-3 left-1/2 -translate-x-1/2 bg-navy/85 text-cream text-xs font-display font-bold px-3 py-1 rounded-md border border-skyNeo">
+              Sejajarkan 4 kotak sudut LJK di dalam bingkai
+            </div>
+          </div>
+          <div class="flex justify-center gap-3">
+            <button id="btnCapturePhoto" class="neo-btn px-6 py-3 bg-mintNeo text-navy text-sm">
+              Ambil Foto &amp; Analisis
+            </button>
+          </div>
+        </div>
+
+        <!-- Uploaded / Captured Image Preview + Scanning Loader -->
+        <div id="imagePreviewContainer" class="hidden space-y-3">
+          <div class="relative w-full max-h-[420px] bg-creamDark rounded-xl border-3 border-navy overflow-hidden flex items-center justify-center">
+            <img id="scannedPreviewImg" alt="Pratinjau LJK" class="max-h-[400px] w-auto object-contain" />
+            <!-- Scanning Overlay -->
+            <div id="scanLoadingOverlay" class="hidden absolute inset-0 bg-navy/75 flex flex-col items-center justify-center text-cream p-4 text-center">
+              <div class="scan-laser absolute left-0 right-0 h-1 bg-skyNeo shadow-[0_0_12px_#7DD3FC]"></div>
+              <div class="w-12 h-12 border-4 border-skyNeo border-t-transparent rounded-full animate-spin mb-3"></div>
+              <p class="font-display font-bold text-lg text-skyNeo">Memindai LJK dengan AI...</p>
+              <p class="text-xs text-cream/80 mt-1">Membaca identitas siswa, bulatan NIS, dan jawaban pilihan ganda.</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap justify-center gap-3">
+            <button id="btnProcessImage" class="neo-btn px-6 py-2.5 bg-navy text-cream text-sm">
+              Pindai Ulang Foto Ini
+            </button>
+            <button id="btnClearPreview" class="neo-btn px-4 py-2.5 bg-creamDark text-navy text-sm">
+              Hapus Foto
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Verification & Save Result Panel -->
+      <div id="scanResultCard" class="hidden neo-card p-5 sm:p-6 space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b-2 border-navy pb-3">
+          <div>
+            <h3 class="font-display font-extrabold text-xl text-navy">Verifikasi Hasil Pindai</h3>
+            <p class="text-xs text-navy/70">Periksa nama, NIS, atau klik bulatan jika ingin koreksi manual sebelum disimpan.</p>
+          </div>
+          <div id="scanScoreBadge" class="px-4 py-2 rounded-lg border-3 border-navy bg-mintNeo font-display font-extrabold text-xl shadow-neoSm">
+            Nilai: 0
+          </div>
+        </div>
+
+        <!-- Student Identity Inputs -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block font-display font-bold text-xs uppercase mb-1" for="scanStudentName">Nama Siswa</label>
+            <input id="scanStudentName" type="text" class="neo-input w-full px-3.5 py-2" placeholder="Nama lengkap siswa" />
+          </div>
+          <div>
+            <label class="block font-display font-bold text-xs uppercase mb-1" for="scanStudentNIS">NIS</label>
+            <input id="scanStudentNIS" type="text" class="neo-input w-full px-3.5 py-2" placeholder="Nomor Induk Siswa" />
+          </div>
+        </div>
+
+        <!-- Quick Stats Strip -->
+        <div class="grid grid-cols-4 gap-2 sm:gap-3 text-center">
+          <div class="p-2.5 bg-mintNeo/50 border-2 border-navy rounded-lg">
+            <div class="text-[11px] font-bold uppercase">Benar</div>
+            <div id="scanStatCorrect" class="font-display font-extrabold text-xl">0</div>
+          </div>
+          <div class="p-2.5 bg-coralNeo/50 border-2 border-navy rounded-lg">
+            <div class="text-[11px] font-bold uppercase">Salah</div>
+            <div id="scanStatWrong" class="font-display font-extrabold text-xl">0</div>
+          </div>
+          <div class="p-2.5 bg-creamDark border-2 border-navy rounded-lg">
+            <div class="text-[11px] font-bold uppercase">Kosong</div>
+            <div id="scanStatBlank" class="font-display font-extrabold text-xl">0</div>
+          </div>
+          <div class="p-2.5 bg-skySoft border-2 border-navy rounded-lg">
+            <div class="text-[11px] font-bold uppercase">Status</div>
+            <div id="scanStatStatus" class="font-display font-extrabold text-xs sm:text-sm mt-1">-</div>
+          </div>
+        </div>
+
+        <!-- Editable Detected Answers Grid -->
+        <div>
+          <h4 class="font-display font-bold text-sm mb-2">Rincian Jawaban Terdeteksi (Klik untuk koreksi)</h4>
+          <div id="scanAnswersGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5"></div>
+        </div>
+
+        <!-- Save to Firebase CTA -->
+        <div class="flex flex-wrap justify-end gap-3 pt-2 border-t-2 border-navy">
+          <button id="btnDiscardScan" class="neo-btn px-4 py-2.5 bg-creamDark text-navy text-sm">
+            Batal
+          </button>
+          <button id="btnSaveScanResult" class="neo-btn px-6 py-2.5 bg-navy text-cream text-sm flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            Simpan ke Database
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- TAB 3: HASIL SISWA                                         -->
+    <!-- ========================================================== -->
+    <section id="tab-results" class="hidden space-y-5">
+      <!-- Top Summary & Export Bar -->
+      <div class="neo-card p-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="font-display font-extrabold text-xl text-navy">Daftar Hasil Siswa</h2>
+          <p id="resultsExamMeta" class="text-xs sm:text-sm text-navy/70">Memuat data ujian...</p>
+        </div>
+        <button id="btnExportResultsExcel" class="neo-btn px-4 py-2.5 bg-mintNeo text-navy text-sm flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Ekspor Excel (.xlsx)
+        </button>
+      </div>
+
+      <!-- KPI Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="neo-card p-4 bg-white">
+          <p class="text-xs font-bold uppercase text-navy/70">Total Siswa</p>
+          <p id="kpiTotalStudents" class="font-display font-extrabold text-3xl text-navy mt-1">0</p>
+        </div>
+        <div class="neo-card p-4 bg-skySoft">
+          <p class="text-xs font-bold uppercase text-navy/70">Rata-rata</p>
+          <p id="kpiAvgScore" class="font-display font-extrabold text-3xl text-navy mt-1">0</p>
+        </div>
+        <div class="neo-card p-4 bg-mintNeo/70">
+          <p class="text-xs font-bold uppercase text-navy/70">Tuntas (≥ KKM)</p>
+          <p id="kpiPassed" class="font-display font-extrabold text-3xl text-navy mt-1">0</p>
+        </div>
+        <div class="neo-card p-4 bg-coralNeo/70">
+          <p class="text-xs font-bold uppercase text-navy/70">Belum Tuntas</p>
+          <p id="kpiFailed" class="font-display font-extrabold text-3xl text-navy mt-1">0</p>
+        </div>
+      </div>
+
+      <!-- Search & Filter -->
+      <div class="flex flex-col sm:flex-row gap-3">
+        <input id="inpSearchStudent" type="text" class="neo-input flex-1 px-4 py-2.5 text-sm" placeholder="Cari nama siswa atau NIS..." />
+        <div class="flex gap-2">
+          <button data-filter="all" class="res-filter neo-btn px-3.5 py-2 text-xs bg-skyNeo text-navy">Semua</button>
+          <button data-filter="pass" class="res-filter neo-btn px-3.5 py-2 text-xs bg-white text-navy">Tuntas</button>
+          <button data-filter="fail" class="res-filter neo-btn px-3.5 py-2 text-xs bg-white text-navy">Remedial</button>
+        </div>
+      </div>
+
+      <!-- Results List / Table -->
+      <div class="neo-card overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-navy text-cream font-display text-xs uppercase">
+                <th class="p-3.5">No</th>
+                <th class="p-3.5">Siswa &amp; NIS</th>
+                <th class="p-3.5 text-center">B / S / K</th>
+                <th class="p-3.5 text-center">Nilai</th>
+                <th class="p-3.5 text-center">Status</th>
+                <th class="p-3.5 text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTableBody" class="divide-y-2 divide-navy text-sm font-medium">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+        <div id="resultsEmptyState" class="hidden p-10 text-center space-y-3">
+          <p class="font-display font-bold text-lg text-navy">Belum Ada Data Hasil Siswa</p>
+          <p class="text-sm text-navy/70">Pindai lembar jawaban siswa di menu <strong>Pindai</strong> untuk mulai merekam nilai.</p>
+          <button onclick="switchMainTab('scan')" class="neo-btn px-5 py-2.5 bg-skyNeo text-navy text-sm">
+            Buka Menu Pindai
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- TAB 4: ANALISIS & EKSPOR                                   -->
+    <!-- ========================================================== -->
+    <section id="tab-analysis" class="hidden space-y-5">
+      <!-- Header & Export -->
+      <div class="neo-card p-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 class="font-display font-extrabold text-xl text-navy">Analisis Butir Soal &amp; Statistik</h2>
+          <p class="text-xs sm:text-sm text-navy/70">Evaluasi tingkat kesukaran soal dan distribusi pilihan siswa.</p>
+        </div>
+        <button id="btnExportAnalysisExcel" class="neo-btn px-4 py-2.5 bg-skyNeo text-navy text-sm flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Ekspor Analisis Excel (.xlsx)
+        </button>
+      </div>
+
+      <!-- Empty State for Analysis -->
+      <div id="analysisEmptyState" class="neo-card p-10 text-center space-y-3">
+        <p class="font-display font-bold text-lg text-navy">Data Belum Cukup untuk Analisis</p>
+        <p class="text-sm text-navy/70">Minimal 1 hasil siswa tersimpan di database untuk menampilkan analisis butir soal.</p>
+      </div>
+
+      <!-- Analysis Content Wrapper -->
+      <div id="analysisContent" class="hidden space-y-5">
+        <!-- Class Stats Summary -->
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div class="neo-card p-3.5 bg-white">
+            <p class="text-[11px] font-bold uppercase text-navy/70">Tertinggi</p>
+            <p id="statMax" class="font-display font-extrabold text-2xl text-navy">0</p>
+          </div>
+          <div class="neo-card p-3.5 bg-white">
+            <p class="text-[11px] font-bold uppercase text-navy/70">Terendah</p>
+            <p id="statMin" class="font-display font-extrabold text-2xl text-navy">0</p>
+          </div>
+          <div class="neo-card p-3.5 bg-skySoft">
+            <p class="text-[11px] font-bold uppercase text-navy/70">Rata-rata</p>
+            <p id="statMean" class="font-display font-extrabold text-2xl text-navy">0</p>
+          </div>
+          <div class="neo-card p-3.5 bg-creamDark">
+            <p class="text-[11px] font-bold uppercase text-navy/70">Median</p>
+            <p id="statMedian" class="font-display font-extrabold text-2xl text-navy">0</p>
+          </div>
+          <div class="neo-card p-3.5 bg-mintNeo/70 col-span-2 sm:col-span-1">
+            <p class="text-[11px] font-bold uppercase text-navy/70">Ketuntasan</p>
+            <p id="statPassRate" class="font-display font-extrabold text-2xl text-navy">0%</p>
+          </div>
+        </div>
+
+        <!-- Score Distribution Chart -->
+        <div class="neo-card p-5 space-y-4">
+          <h3 class="font-display font-extrabold text-lg text-navy">Distribusi Rentang Nilai</h3>
+          <div id="scoreDistBars" class="space-y-3"></div>
+        </div>
+
+        <!-- Difficulty Summary Badges -->
+        <div class="grid grid-cols-3 gap-3 text-center">
+          <div class="neo-card p-3 bg-mintNeo/60">
+            <div class="text-xs font-bold uppercase">Soal Mudah (&gt;70%)</div>
+            <div id="diffEasyCount" class="font-display font-extrabold text-2xl">0</div>
+          </div>
+          <div class="neo-card p-3 bg-amberNeo/70">
+            <div class="text-xs font-bold uppercase">Soal Sedang (30-70%)</div>
+            <div id="diffMedCount" class="font-display font-extrabold text-2xl">0</div>
+          </div>
+          <div class="neo-card p-3 bg-coralNeo/70">
+            <div class="text-xs font-bold uppercase">Soal Sukar (&lt;30%)</div>
+            <div id="diffHardCount" class="font-display font-extrabold text-2xl">0</div>
+          </div>
+        </div>
+
+        <!-- Item Analysis Table -->
+        <div class="neo-card overflow-hidden">
+          <div class="p-4 bg-creamDark border-b-2 border-navy">
+            <h3 class="font-display font-extrabold text-base text-navy">Analisis Per Butir Soal</h3>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr class="bg-navy text-cream font-display text-xs uppercase">
+                  <th class="p-3">No</th>
+                  <th class="p-3 text-center">Kunci</th>
+                  <th class="p-3 text-center">Benar</th>
+                  <th class="p-3 text-center">Salah</th>
+                  <th class="p-3">Tingkat Kesukaran</th>
+                  <th class="p-3">Distribusi Jawaban Siswa</th>
+                </tr>
+              </thead>
+              <tbody id="itemAnalysisBody" class="divide-y-2 divide-navy font-medium"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== BOTTOM NAVIGATION BAR ==================== -->
+  <nav class="fixed bottom-0 left-0 right-0 z-40 px-3 pb-3 pt-1 pointer-events-none">
+    <div class="max-w-xl mx-auto pointer-events-auto bg-cream border-3 border-navy rounded-2xl shadow-neoLg p-1.5 grid grid-cols-4 gap-1.5">
+      <button onclick="switchMainTab('config')" data-tab="config" class="nav-btn flex flex-col items-center justify-center py-2 px-1 rounded-xl border-2 border-navy bg-skyNeo text-navy font-display font-bold text-[11px] sm:text-xs transition-all">
+        <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span>Konfigurasi</span>
+      </button>
+
+      <button onclick="switchMainTab('scan')" data-tab="scan" class="nav-btn flex flex-col items-center justify-center py-2 px-1 rounded-xl border-2 border-transparent bg-transparent text-navy font-display font-bold text-[11px] sm:text-xs transition-all hover:bg-skySoft/40">
+        <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="3"/></svg>
+        <span>Pindai</span>
+      </button>
+
+      <button onclick="switchMainTab('results')" data-tab="results" class="nav-btn flex flex-col items-center justify-center py-2 px-1 rounded-xl border-2 border-transparent bg-transparent text-navy font-display font-bold text-[11px] sm:text-xs transition-all hover:bg-skySoft/40">
+        <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+        <span>Hasil Siswa</span>
+      </button>
+
+      <button onclick="switchMainTab('analysis')" data-tab="analysis" class="nav-btn flex flex-col items-center justify-center py-2 px-1 rounded-xl border-2 border-transparent bg-transparent text-navy font-display font-bold text-[11px] sm:text-xs transition-all hover:bg-skySoft/40">
+        <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        <span>Analisis</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ==================== CUSTOM MODAL (DETAIL / CONFIRM) ==================== -->
+  <div id="customModal" class="hidden fixed inset-0 z-50 bg-navy/70 flex items-center justify-center p-4">
+    <div class="neo-card w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden bg-cream">
+      <div class="px-5 py-3.5 bg-navy text-cream flex items-center justify-between">
+        <h3 id="modalTitle" class="font-display font-bold text-lg">Detail</h3>
+        <button id="modalCloseBtn" class="w-8 h-8 rounded-lg bg-coralNeo text-navy border-2 border-cream font-bold">✕</button>
+      </div>
+      <div id="modalBody" class="p-5 overflow-y-auto space-y-4 text-sm"></div>
+      <div id="modalFooter" class="px-5 py-3.5 border-t-2 border-navy bg-white flex justify-end gap-2.5"></div>
+    </div>
+  </div>
+
+  <!-- ==================== TOAST NOTIFICATION ==================== -->
+  <div id="toastContainer" class="fixed top-20 right-4 z-50 space-y-2 pointer-events-none"></div>
+
+  <!-- Hidden canvas for capturing camera frames -->
+  <canvas id="captureCanvas" class="hidden"></canvas>
+
+  <!-- ==================== APPLICATION LOGIC (ES MODULE) ==================== -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, addDoc, deleteDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // ============================================================
+    // 1. GLOBAL APPLICATION STATE
+    // ============================================================
+    const state = {
+      config: {
+        schoolName: "SMA NEGERI 1 PALU",
+        examTitle: "PENILAIAN TENGAH SEMESTER (PTS)",
+        subject: "Matematika Wajib",
+        className: "XI IPA 1",
+        kkm: 75,
+        digitNis: 6,
+        numQuestions: 20,
+        optionType: "A-D", // 'A-C', 'A-D', 'A-E'
+        columns: 2,        // 2, 3, 4
+        answerKey: {}      // { "1": "A", "2": "C", ... }
+      },
+      results: [],         // Array of student result objects from Firestore
+      filterStatus: "all", // 'all' | 'pass' | 'fail'
+      searchQuery: "",
+      currentScan: null,   // { studentName, nis, answers: { "1": "A", ... } }
+      capturedBase64: null,
+      cameraStream: null
+    };
+
+    // Firebase runtime handles
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    let unsubscribeResults = null;
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+    // Initialize default sample answer key so user can test immediately
+    function ensureDefaultAnswerKey() {
+      const opts = getOptionLetters(state.config.optionType);
+      for (let i = 1; i <= state.config.numQuestions; i++) {
+        if (!state.config.answerKey[i] || !opts.includes(state.config.answerKey[i])) {
+          state.config.answerKey[i] = opts[(i - 1) % opts.length];
+        }
+      }
+    }
+
+    function getOptionLetters(optionType) {
+      if (optionType === 'A-C') return ['A', 'B', 'C'];
+      if (optionType === 'A-E') return ['A', 'B', 'C', 'D', 'E'];
+      return ['A', 'B', 'C', 'D'];
+    }
+
+    // ============================================================
+    // 2. TOAST & CUSTOM MODAL HELPERS (NO alert / confirm)
+    // ============================================================
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const colors = {
+        success: 'bg-mintNeo text-navy',
+        error: 'bg-coralNeo text-navy',
+        warning: 'bg-amberNeo text-navy',
+        info: 'bg-skyNeo text-navy'
+      };
+      const el = document.createElement('div');
+      el.className = `pointer-events-auto px-4 py-2.5 rounded-xl border-3 border-navy shadow-neo font-display font-bold text-xs sm:text-sm ${colors[type] || colors.info} transition-all duration-300`;
+      el.textContent = message;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        el.style.transform = 'translateX(20px)';
+        setTimeout(() => el.remove(), 300);
+      }, 3200);
+    }
+
+    function openModal({ title, bodyHtml, buttons = [] }) {
+      const modal = document.getElementById('customModal');
+      document.getElementById('modalTitle').textContent = title;
+      document.getElementById('modalBody').innerHTML = bodyHtml;
+      const footer = document.getElementById('modalFooter');
+      footer.innerHTML = '';
+
+      buttons.forEach(btn => {
+        const b = document.createElement('button');
+        b.className = `neo-btn px-4 py-2 text-sm ${btn.className || 'bg-white text-navy'}`;
+        b.textContent = btn.label;
+        b.onclick = () => {
+          if (btn.onClick) btn.onClick();
+          closeModal();
+        };
+        footer.appendChild(b);
+      });
+
+      modal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('customModal').classList.add('hidden');
+    }
+
+    document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+
+    // ============================================================
+    // 3. FIREBASE INITIALIZATION & REAL-TIME SYNC
+    // ============================================================
+    async function initFirebase() {
+      const dot = document.getElementById('dbStatusDot');
+      const txt = document.getElementById('dbStatusText');
+
+      try {
+        if (typeof __firebase_config === 'undefined') {
+          dot.className = 'w-2.5 h-2.5 rounded-full bg-amberNeo';
+          txt.textContent = 'Mode Lokal';
+          return;
+        }
+
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        // RULE 3: Authenticate BEFORE any Firestore queries
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        currentUser = auth.currentUser;
+        if (!currentUser) throw new Error("Autentikasi gagal.");
+
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-mintNeo';
+        txt.textContent = 'Terhubung';
+
+        // Load saved exam config if exists
+        await loadConfigFromFirestore();
+        // Subscribe to student results
+        subscribeStudentResults();
+      } catch (err) {
+        console.error("Firebase init error:", err);
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-coralNeo';
+        txt.textContent = 'Offline';
+        showToast("Mode offline aktif. Data disimpan di sesi ini.", "warning");
+      }
+    }
+
+    async function loadConfigFromFirestore() {
+      if (!db || !currentUser) return;
+      try {
+        const cfgRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'exam_configs', 'active_config');
+        const snap = await getDoc(cfgRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          state.config = {
+            ...state.config,
+            ...data,
+            answerKey: data.answerKey ? JSON.parse(data.answerKey) : state.config.answerKey
+          };
+          syncConfigUI();
+          renderLJKCanvas();
+        }
+      } catch (err) {
+        console.error("Gagal memuat konfigurasi:", err);
+      }
+    }
+
+    async function saveConfigToFirestore(silent = false) {
+      if (!db || !currentUser) {
+        if (!silent) showToast("Konfigurasi tersimpan di sesi lokal.", "info");
+        return;
+      }
+      try {
+        const cfgRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'exam_configs', 'active_config');
+        await setDoc(cfgRef, {
+          schoolName: state.config.schoolName,
+          examTitle: state.config.examTitle,
+          subject: state.config.subject,
+          className: state.config.className,
+          kkm: Number(state.config.kkm),
+          digitNis: Number(state.config.digitNis),
+          numQuestions: Number(state.config.numQuestions),
+          optionType: state.config.optionType,
+          columns: Number(state.config.columns),
+          answerKey: JSON.stringify(state.config.answerKey),
+          updatedAt: new Date().toISOString()
+        });
+        if (!silent) showToast("Konfigurasi tersimpan ke database!", "success");
+      } catch (err) {
+        console.error("Gagal menyimpan konfigurasi:", err);
+        showToast("Gagal menyimpan ke database.", "error");
+      }
+    }
+
+    function subscribeStudentResults() {
+      if (!db || !currentUser) return;
+      if (unsubscribeResults) unsubscribeResults();
+
+      // RULE 1 & 2: Strict user path, simple collection query (sort in memory)
+      const colRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'student_results');
+      unsubscribeResults = onSnapshot(
+        colRef,
+        (snapshot) => {
+          const list = [];
+          snapshot.forEach(docSnap => {
+            const d = docSnap.data();
+            list.push({
+              id: docSnap.id,
+              studentName: d.studentName || 'Tanpa Nama',
+              nis: d.nis || '-',
+              answers: typeof d.answers === 'string' ? JSON.parse(d.answers) : (d.answers || {}),
+              correct: Number(d.correct || 0),
+              wrong: Number(d.wrong || 0),
+              blank: Number(d.blank || 0),
+              score: Number(d.score || 0),
+              kkmAtScan: Number(d.kkmAtScan || state.config.kkm),
+              numQuestions: Number(d.numQuestions || state.config.numQuestions),
+              createdAt: d.createdAt || new Date().toISOString()
+            });
+          });
+          // Sort newest first in JS memory
+          list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          state.results = list;
+          renderResultsView();
+          renderAnalysisView();
+        },
+        (error) => {
+          console.error("Snapshot error:", error);
+          showToast("Gagal menyinkronkan data hasil siswa.", "error");
+        }
+      );
+    }
+
+    async function addStudentResultToFirestore(record) {
+      if (!db || !currentUser) {
+        // Fallback in-memory if offline
+        state.results.unshift({ id: 'local_' + Date.now(), ...record });
+        renderResultsView();
+        renderAnalysisView();
+        showToast("Hasil disimpan di sesi lokal!", "success");
+        return;
+      }
+      try {
+        const colRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'student_results');
+        await addDoc(colRef, {
+          studentName: record.studentName,
+          nis: record.nis,
+          answers: JSON.stringify(record.answers),
+          correct: record.correct,
+          wrong: record.wrong,
+          blank: record.blank,
+          score: record.score,
+          kkmAtScan: state.config.kkm,
+          numQuestions: state.config.numQuestions,
+          createdAt: new Date().toISOString()
+        });
+        showToast(`Nilai ${record.studentName} berhasil disimpan!`, "success");
+      } catch (err) {
+        console.error("Gagal menyimpan hasil:", err);
+        showToast("Gagal menyimpan hasil ke database.", "error");
+      }
+    }
+
+    async function deleteStudentResult(id) {
+      if (!db || !currentUser || id.startsWith('local_')) {
+        state.results = state.results.filter(r => r.id !== id);
+        renderResultsView();
+        renderAnalysisView();
+        showToast("Data siswa dihapus.", "info");
+        return;
+      }
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'student_results', id);
+        await deleteDoc(docRef);
+        showToast("Data siswa dihapus dari database.", "info");
+      } catch (err) {
+        console.error("Gagal menghapus:", err);
+        showToast("Gagal menghapus data siswa.", "error");
+      }
+    }
+
+    // ============================================================
+    // 4. NAVIGATION (BOTTOM BAR & CONFIG SUBTABS)
+    // ============================================================
+    window.switchMainTab = function(tabName) {
+      const tabs = ['config', 'scan', 'results', 'analysis'];
+      tabs.forEach(t => {
+        document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tabName);
+      });
+
+      // Stop camera when leaving scan tab
+      if (tabName !== 'scan') stopCamera();
+
+      // Update bottom nav visual state
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        const active = btn.dataset.tab === tabName;
+        if (active) {
+          btn.classList.add('bg-skyNeo', 'border-navy', 'shadow-neoSm');
+          btn.classList.remove('bg-transparent', 'border-transparent');
+        } else {
+          btn.classList.remove('bg-skyNeo', 'border-navy', 'shadow-neoSm');
+          btn.classList.add('bg-transparent', 'border-transparent');
+        }
+      });
+
+      if (tabName === 'config') renderLJKCanvas();
+      if (tabName === 'scan') updateScanSummaryBadge();
+      if (tabName === 'results') renderResultsView();
+      if (tabName === 'analysis') renderAnalysisView();
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    function switchConfigSubtab(subName) {
+      document.querySelectorAll('.config-panel').forEach(p => p.classList.add('hidden'));
+      document.getElementById(`subtab-${subName}`).classList.remove('hidden');
+
+      document.querySelectorAll('.config-subtab').forEach(btn => {
+        const active = btn.dataset.subtab === subName;
+        btn.classList.toggle('bg-skyNeo', active);
+        btn.classList.toggle('bg-white', !active);
+      });
+
+      if (subName === 'kunci') renderAnswerKeyGrid();
+      if (subName === 'preview') renderLJKCanvas();
+    }
+
+    document.querySelectorAll('.config-subtab').forEach(btn => {
+      btn.addEventListener('click', () => switchConfigSubtab(btn.dataset.subtab));
+    });
+    document.querySelectorAll('[data-goto-subtab]').forEach(btn => {
+      btn.addEventListener('click', () => switchConfigSubtab(btn.dataset.gotoSubtab));
+    });
+
+    // ============================================================
+    // 5. KONFIGURASI KOP, FORMAT LJK, & KUNCI JAWABAN
+    // ============================================================
+    function syncConfigUI() {
+      const c = state.config;
+      document.getElementById('inpSchool').value = c.schoolName;
+      document.getElementById('inpTitle').value = c.examTitle;
+      document.getElementById('inpSubject').value = c.subject;
+      document.getElementById('inpClass').value = c.className;
+      document.getElementById('inpKKM').value = c.kkm;
+
+      document.getElementById('headerSubtitle').textContent = `${c.subject} • ${c.className}`;
+
+      // Highlight selected option buttons
+      document.querySelectorAll('.opt-nis').forEach(b => {
+        const active = Number(b.dataset.val) === Number(c.digitNis);
+        b.classList.toggle('bg-skyNeo', active);
+        b.classList.toggle('bg-white', !active);
+      });
+      document.querySelectorAll('.opt-q').forEach(b => {
+        const active = Number(b.dataset.val) === Number(c.numQuestions);
+        b.classList.toggle('bg-skyNeo', active);
+        b.classList.toggle('bg-white', !active);
+      });
+      document.querySelectorAll('.opt-type').forEach(b => {
+        const active = b.dataset.val === c.optionType;
+        b.classList.toggle('bg-skyNeo', active);
+        b.classList.toggle('bg-white', !active);
+      });
+      document.querySelectorAll('.opt-col').forEach(b => {
+        const active = Number(b.dataset.val) === Number(c.columns);
+        b.classList.toggle('bg-skyNeo', active);
+        b.classList.toggle('bg-white', !active);
+      });
+
+      renderAnswerKeyGrid();
+      updateScanSummaryBadge();
+    }
+
+    // Bind KOP inputs
+    ['inpSchool', 'inpTitle', 'inpSubject', 'inpClass', 'inpKKM'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        state.config.schoolName = document.getElementById('inpSchool').value.trim() || 'NAMA SEKOLAH';
+        state.config.examTitle = document.getElementById('inpTitle').value.trim() || 'UJIAN PILIHAN GANDA';
+        state.config.subject = document.getElementById('inpSubject').value.trim() || 'Mata Pelajaran';
+        state.config.className = document.getElementById('inpClass').value.trim() || 'Kelas';
+        state.config.kkm = Math.max(0, Math.min(100, Number(document.getElementById('inpKKM').value) || 0));
+        document.getElementById('headerSubtitle').textContent = `${state.config.subject} • ${state.config.className}`;
+      });
+    });
+
+    // Bind Format LJK selector buttons
+    document.querySelectorAll('.opt-nis').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.digitNis = Number(btn.dataset.val);
+        syncConfigUI();
+      });
+    });
+    document.querySelectorAll('.opt-q').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.numQuestions = Number(btn.dataset.val);
+        ensureDefaultAnswerKey();
+        syncConfigUI();
+      });
+    });
+    document.querySelectorAll('.opt-type').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.optionType = btn.dataset.val;
+        ensureDefaultAnswerKey();
+        syncConfigUI();
+      });
+    });
+    document.querySelectorAll('.opt-col').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.columns = Number(btn.dataset.val);
+        syncConfigUI();
+      });
+    });
+
+    // Save buttons
+    document.getElementById('btnSaveKop').addEventListener('click', () => saveConfigToFirestore(false));
+    document.getElementById('btnSaveFormat').addEventListener('click', () => saveConfigToFirestore(false));
+    document.getElementById('btnSaveKeys').addEventListener('click', () => saveConfigToFirestore(false));
+
+    // Render Answer Key Grid
+    function renderAnswerKeyGrid() {
+      const grid = document.getElementById('answerKeyGrid');
+      const opts = getOptionLetters(state.config.optionType);
+      const total = state.config.numQuestions;
+      grid.innerHTML = '';
+
+      let filled = 0;
+      for (let q = 1; q <= total; q++) {
+        const currentAns = state.config.answerKey[q] || '';
+        if (opts.includes(currentAns)) filled++;
+
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2 p-2.5 bg-cream border-2 border-navy rounded-lg';
+
+        const numLabel = document.createElement('span');
+        numLabel.className = 'font-display font-extrabold text-sm w-7 text-navy';
+        numLabel.textContent = `${String(q).padStart(2, '0')}.`;
+        row.appendChild(numLabel);
+
+        const btnWrap = document.createElement('div');
+        btnWrap.className = 'flex gap-1.5';
+
+        opts.forEach(letter => {
+          const b = document.createElement('button');
+          const isSelected = currentAns === letter;
+          b.type = 'button';
+          b.className = `w-8 h-8 rounded-full border-2 border-navy font-display font-bold text-xs transition-all ${
+            isSelected ? 'bg-navy text-skyNeo shadow-neoSm scale-105' : 'bg-white text-navy hover:bg-skySoft'
+          }`;
+          b.textContent = letter;
+          b.onclick = () => {
+            state.config.answerKey[q] = letter;
+            renderAnswerKeyGrid();
+          };
+          btnWrap.appendChild(b);
+        });
+
+        row.appendChild(btnWrap);
+        grid.appendChild(row);
+      }
+
+      const badge = document.getElementById('keyProgressBadge');
+      badge.textContent = `Terisi: ${filled} / ${total}`;
+      badge.className = `px-3 py-1 border-2 border-navy rounded-md text-xs font-display font-bold ${
+        filled === total ? 'bg-mintNeo text-navy' : 'bg-amberNeo text-navy'
+      }`;
+    }
+
+    document.getElementById('btnRandomKeys').addEventListener('click', () => {
+      const opts = getOptionLetters(state.config.optionType);
+      for (let q = 1; q <= state.config.numQuestions; q++) {
+        state.config.answerKey[q] = opts[Math.floor(Math.random() * opts.length)];
+      }
+      renderAnswerKeyGrid();
+      showToast("Kunci jawaban diisi secara acak.", "info");
+    });
+
+    document.getElementById('btnClearKeys').addEventListener('click', () => {
+      state.config.answerKey = {};
+      renderAnswerKeyGrid();
+      showToast("Semua kunci jawaban dikosongkan.", "warning");
+    });
+
+    // ============================================================
+    // 6. HIGH-RES A4 LJK CANVAS GENERATOR + PNG & PDF EXPORT
+    // ============================================================
+    function renderLJKCanvas() {
+      const canvas = document.getElementById('ljkCanvas');
+      if (!canvas) return;
+
+      // A4 proportions at 150 DPI: 1240 x 1754 px
+      const W = 1240;
+      const H = 1754;
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      const c = state.config;
+      const opts = getOptionLetters(c.optionType);
+
+      // 1. Crisp White Paper Background
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, W, H);
+
+      // 2. Four Corner Fiducial Alignment Markers (for OMR Camera Scanning)
+      const drawFiducial = (x, y) => {
+        ctx.fillStyle = '#0B1D3A';
+        ctx.fillRect(x, y, 42, 42);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(x + 9, y + 9, 24, 24);
+        ctx.fillStyle = '#0B1D3A';
+        ctx.fillRect(x + 15, y + 15, 12, 12);
+      };
+      drawFiducial(42, 42);
+      drawFiducial(W - 84, 42);
+      drawFiducial(42, H - 84);
+      drawFiducial(W - 84, H - 84);
+
+      // Safe content bounds
+      const left = 105;
+      const right = W - 105;
+      const contentW = right - left; // 1030px
+
+      // 3. KOP HEADER BOX
+      ctx.strokeStyle = '#0B1D3A';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(left, 60, contentW, 150);
+
+      // Accent top bar inside KOP
+      ctx.fillStyle = '#0B1D3A';
+      ctx.fillRect(left, 60, contentW, 38);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 20px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('LEMBAR JAWABAN KOMPUTER (LJK) — PILIHAN GANDA', W / 2, 86);
+
+      ctx.fillStyle = '#0B1D3A';
+      ctx.font = '800 30px "Space Grotesk", sans-serif';
+      ctx.fillText((c.schoolName || 'NAMA SEKOLAH').toUpperCase(), W / 2, 134);
+
+      ctx.font = '700 22px "Inter", sans-serif';
+      ctx.fillText((c.examTitle || 'JUDUL UJIAN').toUpperCase(), W / 2, 166);
+
+      ctx.font = '600 18px "Inter", sans-serif';
+      ctx.fillText(`Mata Pelajaran: ${c.subject}   |   Kelas: ${c.className}   |   KKM: ${c.kkm}`, W / 2, 196);
+
+      // 4. IDENTITAS SISWA (LEFT) & NIS BUBBLE GRID (RIGHT)
+      const midTopY = 230;
+      const midH = 400;
+      const leftBoxW = 450;
+      const rightBoxX = left + leftBoxW + 20;
+      const rightBoxW = contentW - leftBoxW - 20; // 560px
+
+      // Left Box: Student Info & Instructions
+      ctx.lineWidth = 3;
+      ctx.strokeRect(left, midTopY, leftBoxW, midH);
+
+      ctx.fillStyle = '#0B1D3A';
+      ctx.fillRect(left, midTopY, leftBoxW, 34);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 17px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('IDENTITAS PESERTA UJIAN', left + 14, midTopY + 23);
+
+      ctx.fillStyle = '#0B1D3A';
+      ctx.font = '600 17px "Inter", sans-serif';
+      const drawField = (label, yPos) => {
+        ctx.fillText(label, left + 16, yPos);
+        ctx.beginPath();
+        ctx.moveTo(left + 16, yPos + 28);
+        ctx.lineTo(left + leftBoxW - 16, yPos + 28);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      };
+      drawField('Nama Lengkap Siswa:', midTopY + 62);
+      drawField('Kelas / Ruang:', midTopY + 124);
+      drawField('Tanggal Ujian:', midTopY + 186);
+
+      // Instructions Box inside left box
+      ctx.fillStyle = '#F3F4F6';
+      ctx.fillRect(left + 14, midTopY + 238, leftBoxW - 28, 146);
+      ctx.strokeStyle = '#0B1D3A';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(left + 14, midTopY + 238, leftBoxW - 28, 146);
+
+      ctx.fillStyle = '#0B1D3A';
+      ctx.font = 'bold 15px "Space Grotesk", sans-serif';
+      ctx.fillText('PETUNJUK PENGISIAN:', left + 26, midTopY + 262);
+      ctx.font = '500 14px "Inter", sans-serif';
+      ctx.fillText('1. Tulis Nama & NIS pada kotak yang tersedia.', left + 26, midTopY + 286);
+      ctx.fillText('2. Hitamkan bulatan penuh dengan pensil 2B/pulpen.', left + 26, midTopY + 308);
+      ctx.fillText('3. Contoh Benar:      Contoh Salah:', left + 26, midTopY + 332);
+
+      // Correct filled circle example
+      ctx.beginPath();
+      ctx.arc(left + 162, midTopY + 327, 9, 0, Math.PI * 2);
+      ctx.fill();
+      // Wrong crossed circle example
+      ctx.beginPath();
+      ctx.arc(left + 292, midTopY + 327, 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(left + 286, midTopY + 321);
+      ctx.lineTo(left + 298, midTopY + 333);
+      ctx.moveTo(left + 298, midTopY + 321);
+      ctx.lineTo(left + 286, midTopY + 333);
+      ctx.stroke();
+
+      ctx.fillText('4. Jangan melipat atau mengotori 4 kotak sudut.', left + 26, midTopY + 362);
+
+      // Right Box: NIS Bubble Grid
+      ctx.lineWidth = 3;
+      ctx.strokeRect(rightBoxX, midTopY, rightBoxW, midH);
+      ctx.fillStyle = '#0B1D3A';
+      ctx.fillRect(rightBoxX, midTopY, rightBoxW, 34);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 17px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`NOMOR INDUK SISWA (NIS — ${c.digitNis} DIGIT)`, rightBoxX + rightBoxW / 2, midTopY + 23);
+
+      const digits = Number(c.digitNis);
+      const nisInnerPad = 24;
+      const nisAreaW = rightBoxW - nisInnerPad * 2;
+      const colStep = Math.min(50, nisAreaW / digits);
+      const nisStartX = rightBoxX + (rightBoxW - colStep * digits) / 2;
+      const boxY = midTopY + 46;
+      const boxSize = Math.min(34, colStep - 8);
+
+      for (let d = 0; d < digits; d++) {
+        const cx = nisStartX + d * colStep + colStep / 2;
+        // Write-in square box
+        ctx.strokeStyle = '#0B1D3A';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx - boxSize / 2, boxY, boxSize, 32);
+
+        // 0 - 9 bubbles vertically
+        for (let num = 0; num <= 9; num++) {
+          const cy = boxY + 52 + num * 30;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+          ctx.lineWidth = 1.8;
+          ctx.strokeStyle = '#0B1D3A';
+          ctx.stroke();
+
+          ctx.fillStyle = '#0B1D3A';
+          ctx.font = '600 13px "Inter", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(num), cx, cy + 0.5);
+        }
+      }
+      ctx.textBaseline = 'alphabetic';
+
+      // 5. PILIHAN GANDA SECTION
+      const pgTopY = 650;
+      const pgH = 980;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#0B1D3A';
+      ctx.strokeRect(left, pgTopY, contentW, pgH);
+
+      ctx.fillStyle = '#0B1D3A';
+      ctx.fillRect(left, pgTopY, contentW, 38);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 18px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`JAWABAN PILIHAN GANDA (${c.numQuestions} SOAL — OPSI ${c.optionType})`, W / 2, pgTopY + 25);
+
+      // Compute dynamic column geometry
+      const numCols = Number(c.columns);
+      const totalQ = Number(c.numQuestions);
+      const rowsPerCol = Math.ceil(totalQ / numCols);
+      const innerTop = pgTopY + 58;
+      const innerH = pgH - 76;
+      const rowH = Math.min(48, innerH / rowsPerCol);
+
+      const colGap = 20;
+      const singleColW = (contentW - 40 - colGap * (numCols - 1)) / numCols;
+
+      // Dynamic bubble sizing to guarantee zero overlap even at 4 columns x 5 options
+      const numLabelW = 42;
+      const bubbleAreaW = singleColW - numLabelW - 12;
+      const bubbleStep = bubbleAreaW / opts.length;
+      const bubbleR = Math.min(14, Math.max(10.5, bubbleStep * 0.34));
+
+      for (let col = 0; col < numCols; col++) {
+        const colX = left + 20 + col * (singleColW + colGap);
+
+        // Subtle column divider box
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(colX, innerTop - 10, singleColW, rowsPerCol * rowH + 14);
+
+        for (let r = 0; r < rowsPerCol; r++) {
+          const qNum = col * rowsPerCol + r + 1;
+          if (qNum > totalQ) break;
+
+          const cy = innerTop + r * rowH + rowH / 2;
+
+          // Zebra highlight every 5th row for easy tracking
+          if (qNum % 5 === 0) {
+            ctx.fillStyle = '#F8FAFC';
+            ctx.fillRect(colX + 2, cy - rowH / 2 + 2, singleColW - 4, rowH - 4);
+          }
+
+          // Question Number
+          ctx.fillStyle = '#0B1D3A';
+          ctx.font = '700 16px "Space Grotesk", sans-serif';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${String(qNum).padStart(2, '0')}.`, colX + numLabelW - 6, cy);
+
+          // Option Bubbles
+          opts.forEach((letter, idx) => {
+            const bx = colX + numLabelW + idx * bubbleStep + bubbleStep / 2;
+            ctx.beginPath();
+            ctx.arc(bx, cy, bubbleR, 0, Math.PI * 2);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#0B1D3A';
+            ctx.stroke();
+
+            ctx.fillStyle = '#0B1D3A';
+            ctx.font = `700 ${Math.round(bubbleR * 1.05)}px "Inter", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(letter, bx, cy + 0.5);
+          });
+        }
+      }
+
+      // 6. FOOTER METADATA
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#475569';
+      ctx.font = '600 14px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(
+        `SAMGRADE OMR SHEET  •  NIS: ${c.digitNis} Digit  •  Soal: ${c.numQuestions}  •  Opsi: ${c.optionType}  •  Kolom: ${c.columns}`,
+        W / 2,
+        H - 52
+      );
+    }
+
+    // Export LJK as PNG
+    document.getElementById('btnDownloadPNG').addEventListener('click', () => {
+      renderLJKCanvas();
+      const canvas = document.getElementById('ljkCanvas');
+      const link = document.createElement('a');
+      const safeName = `${state.config.subject}_${state.config.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      link.download = `LJK_${safeName}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
+      showToast("Lembar Jawaban (PNG) berhasil diunduh!", "success");
+    });
+
+    // Export LJK as A4 PDF
+    document.getElementById('btnDownloadPDF').addEventListener('click', () => {
+      try {
+        renderLJKCanvas();
+        const canvas = document.getElementById('ljkCanvas');
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+        const safeName = `${state.config.subject}_${state.config.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        pdf.save(`LJK_${safeName}.pdf`);
+        showToast("Lembar Jawaban (PDF A4) berhasil diunduh!", "success");
+      } catch (err) {
+        console.error("PDF export error:", err);
+        showToast("Gagal mengekspor PDF.", "error");
+      }
+    });
+
+    // ============================================================
+    // 7. PINDAI KAMERA, UPLOAD FOTO & GEMINI VISION OMR
+    // ============================================================
+    function updateScanSummaryBadge() {
+      const c = state.config;
+      document.getElementById('scanConfigSummary').textContent = `${c.numQuestions} Soal | ${c.optionType} | NIS ${c.digitNis}D`;
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 960 } }
+        });
+        state.cameraStream = stream;
+        const video = document.getElementById('cameraVideo');
+        video.srcObject = stream;
+        document.getElementById('cameraContainer').classList.remove('hidden');
+        document.getElementById('imagePreviewContainer').classList.add('hidden');
+        document.getElementById('btnCameraLabel').textContent = 'Tutup Kamera';
+      } catch (err) {
+        console.error("Camera error:", err);
+        showToast("Kamera tidak tersedia atau izin ditolak. Gunakan Unggah Foto.", "warning");
+      }
+    }
+
+    function stopCamera() {
+      if (state.cameraStream) {
+        state.cameraStream.getTracks().forEach(t => t.stop());
+        state.cameraStream = null;
+      }
+      document.getElementById('cameraContainer').classList.add('hidden');
+      document.getElementById('btnCameraLabel').textContent = 'Buka Kamera';
+    }
+
+    document.getElementById('btnToggleCamera').addEventListener('click', () => {
+      if (state.cameraStream) stopCamera();
+      else startCamera();
+    });
+
+    // Capture frame from live camera
+    document.getElementById('btnCapturePhoto').addEventListener('click', () => {
+      const video = document.getElementById('cameraVideo');
+      const capCanvas = document.getElementById('captureCanvas');
+      capCanvas.width = video.videoWidth || 1080;
+      capCanvas.height = video.videoHeight || 1440;
+      const ctx = capCanvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
+
+      const dataUrl = capCanvas.toDataURL('image/jpeg', 0.88);
+      stopCamera();
+      showCapturedImageAndScan(dataUrl);
+    });
+
+    // Handle photo upload from gallery/file
+    document.getElementById('inpPhotoFile').addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        stopCamera();
+        showCapturedImageAndScan(ev.target.result);
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    });
+
+    // Normalize any image (PNG, WebP, or large camera photo) to a clean, compressed JPEG
+    function normalizeImageToJpeg(dataUrl, maxDimension = 1600) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxDimension || height > maxDimension) {
+            if (width >= height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          // Fill white background so transparent PNGs remain legible
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          const normalizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(normalizedDataUrl.split(',')[1]);
+        };
+        img.onerror = () => reject(new Error("Gagal memuat file gambar."));
+        img.src = dataUrl;
+      });
+    }
+
+    async function showCapturedImageAndScan(dataUrl) {
+      const img = document.getElementById('scannedPreviewImg');
+      img.src = dataUrl;
+      document.getElementById('imagePreviewContainer').classList.remove('hidden');
+
+      try {
+        // Compress & convert to valid JPEG base64 before sending to Gemini Vision
+        state.capturedBase64 = await normalizeImageToJpeg(dataUrl);
+        await analyzeLJKImageWithGemini(state.capturedBase64);
+      } catch (err) {
+        console.error("Image normalization error:", err);
+        showToast("Format gambar tidak dapat dibaca. Coba foto lain.", "error");
+      }
+    }
+
+    document.getElementById('btnProcessImage').addEventListener('click', () => {
+      if (state.capturedBase64) analyzeLJKImageWithGemini(state.capturedBase64);
+    });
+
+    document.getElementById('btnClearPreview').addEventListener('click', () => {
+      state.capturedBase64 = null;
+      document.getElementById('imagePreviewContainer').classList.add('hidden');
+      document.getElementById('scanResultCard').classList.add('hidden');
+    });
+
+    // Exponential backoff fetch helper with network retry protection
+    async function fetchWithRetry(url, options, maxRetries = 4) {
+      let delay = 1000;
+      let lastError = null;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const res = await fetch(url, options);
+          if (res.ok) return res;
+          if (res.status === 429 || res.status >= 500) {
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2;
+            continue;
+          }
+          return res;
+        } catch (err) {
+          lastError = err;
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        }
+      }
+      throw lastError || new Error("API gagal merespons setelah beberapa percobaan.");
+    }
+
+    // Safely parse JSON even if model wraps output in markdown fences
+    function safeParseJsonText(rawText) {
+      let cleaned = String(rawText || '').trim();
+      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (_) {
+        const start = cleaned.indexOf('{');
+        const end = cleaned.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+          return JSON.parse(cleaned.slice(start, end + 1));
+        }
+        throw new Error("Format respons AI tidak valid.");
+      }
+    }
+
+    // Call Gemini Vision API (gemini-3-flash-preview) with Structured JSON Output + Fallback
+    async function analyzeLJKImageWithGemini(base64Data) {
+      const overlay = document.getElementById('scanLoadingOverlay');
+      overlay.classList.remove('hidden');
+
+      const opts = getOptionLetters(state.config.optionType);
+      const prompt = `Kamu adalah sistem Optical Mark Recognition (OMR) yang akurat untuk memeriksa Lembar Jawaban Komputer (LJK) Pilihan Ganda berbasis kertas.
+Tugasmu:
+1. Baca Nama Lengkap Siswa (jika tidak terlihat/kosong, isi "Siswa Tanpa Nama").
+2. Baca Nomor Induk Siswa (NIS) sejumlah ${state.config.digitNis} digit dari kotak tulisan atau bulatan yang dihitamkan (jika kosong, isi "").
+3. Periksa soal nomor 1 sampai ${state.config.numQuestions}. Untuk setiap nomor, tentukan huruf opsi (${opts.join(', ')}) yang paling jelas dihitamkan/disilang/dilingkari. Jika kosong atau tidak ada tanda, isi string kosong "".
+Kembalikan HANYA objek JSON valid dengan struktur:
+{"studentName": "...", "nis": "...", "answers": [{"number": 1, "answer": "A"}, ...]}`;
+
+      const buildPayload = (useSchema) => {
+        const generationConfig = {
+          responseMimeType: "application/json",
+          temperature: 0.1
+        };
+        if (useSchema) {
+          generationConfig.responseSchema = {
+            type: "OBJECT",
+            properties: {
+              studentName: { type: "STRING" },
+              nis: { type: "STRING" },
+              answers: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    number: { type: "INTEGER" },
+                    answer: { type: "STRING" }
+                  },
+                  required: ["number", "answer"]
+                }
+              }
+            },
+            required: ["studentName", "nis", "answers"]
+          };
+        }
+        return {
+          contents: [{
+            role: "user",
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType: "image/jpeg", data: base64Data } }
+            ]
+          }],
+          generationConfig
+        };
+      };
+
+      const apiKey = "";
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+      try {
+        let response = await fetchWithRetry(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildPayload(true))
+        });
+
+        // Fallback without strict responseSchema if request returns 400
+        if (!response.ok && response.status === 400) {
+          response = await fetchWithRetry(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(buildPayload(false))
+          });
+        }
+
+        const result = await response.json();
+        if (!response.ok) {
+          const apiErrMsg = result?.error?.message || `HTTP ${response.status}`;
+          throw new Error(apiErrMsg);
+        }
+
+        const parts = result?.candidates?.[0]?.content?.parts || [];
+        const jsonText = parts.map(p => p.text || '').join('').trim();
+
+        if (!jsonText) throw new Error("Respons AI kosong.");
+        const parsed = safeParseJsonText(jsonText);
+
+        const ansMap = {};
+        for (let q = 1; q <= state.config.numQuestions; q++) ansMap[q] = '';
+        if (Array.isArray(parsed.answers)) {
+          parsed.answers.forEach(item => {
+            const num = Number(item.number);
+            const val = (item.answer || '').toUpperCase().trim();
+            if (num >= 1 && num <= state.config.numQuestions && opts.includes(val)) {
+              ansMap[num] = val;
+            }
+          });
+        } else if (parsed.answers && typeof parsed.answers === 'object') {
+          Object.entries(parsed.answers).forEach(([k, v]) => {
+            const num = Number(k);
+            const val = String(v || '').toUpperCase().trim();
+            if (num >= 1 && num <= state.config.numQuestions && opts.includes(val)) {
+              ansMap[num] = val;
+            }
+          });
+        }
+
+        state.currentScan = {
+          studentName: parsed.studentName || 'Siswa Tanpa Nama',
+          nis: String(parsed.nis || '').replace(/\D/g, '') || '0'.repeat(state.config.digitNis),
+          answers: ansMap
+        };
+
+        renderScanVerification();
+        showToast("Pemindaian LJK selesai! Silakan verifikasi hasil.", "success");
+      } catch (err) {
+        console.error("Gemini scan error:", err);
+        const detail = err?.message ? ` (${err.message})` : '';
+        showToast(`Pemindaian otomatis gagal${detail}. Anda tetap bisa koreksi manual.`, "error");
+        // Still open manual verification panel so teacher isn't blocked
+        const blankMap = {};
+        for (let q = 1; q <= state.config.numQuestions; q++) blankMap[q] = '';
+        state.currentScan = { studentName: '', nis: '', answers: blankMap };
+        renderScanVerification();
+      } finally {
+        overlay.classList.add('hidden');
+      }
+    }
+
+    // Demo Simulation Scan Button
+    const DEMO_NAMES = [
+      "Andi Pratama", "Siti Rahmawati", "Budi Santoso", "Dewi Lestari",
+      "Rizky Ramadhan", "Putri Aulia", "Fajar Nugroho", "Nabila Azzahra",
+      "Dimas Saputra", "Aisyah Kartika", "Muh. Iqbal", "Clara Wijaya"
+    ];
+
+    document.getElementById('btnSimulateScan').addEventListener('click', () => {
+      stopCamera();
+      document.getElementById('imagePreviewContainer').classList.add('hidden');
+      ensureDefaultAnswerKey();
+
+      const opts = getOptionLetters(state.config.optionType);
+      const total = state.config.numQuestions;
+      const accuracy = 0.45 + Math.random() * 0.5; // 45% - 95%
+      const answers = {};
+
+      for (let q = 1; q <= total; q++) {
+        const keyAns = state.config.answerKey[q] || opts[0];
+        const roll = Math.random();
+        if (roll < accuracy) {
+          answers[q] = keyAns;
+        } else if (roll < 0.96) {
+          const wrongOpts = opts.filter(o => o !== keyAns);
+          answers[q] = wrongOpts[Math.floor(Math.random() * wrongOpts.length)];
+        } else {
+          answers[q] = ''; // blank
+        }
+      }
+
+      const name = DEMO_NAMES[Math.floor(Math.random() * DEMO_NAMES.length)];
+      let nis = '';
+      for (let i = 0; i < state.config.digitNis; i++) nis += Math.floor(Math.random() * 10);
+
+      state.currentScan = { studentName: name, nis, answers };
+      renderScanVerification();
+      showToast(`Simulasi pindai untuk ${name} berhasil!`, "info");
+    });
+
+    // Compute grade metrics against current answer key
+    function evaluateAnswers(studentAnswers) {
+      const total = state.config.numQuestions;
+      let correct = 0, wrong = 0, blank = 0;
+      for (let q = 1; q <= total; q++) {
+        const ans = studentAnswers[q] || '';
+        const key = state.config.answerKey[q] || '';
+        if (!ans) blank++;
+        else if (ans === key) correct++;
+        else wrong++;
+      }
+      const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+      return { correct, wrong, blank, score };
+    }
+
+    function renderScanVerification() {
+      if (!state.currentScan) return;
+      const card = document.getElementById('scanResultCard');
+      card.classList.remove('hidden');
+
+      document.getElementById('scanStudentName').value = state.currentScan.studentName;
+      document.getElementById('scanStudentNIS').value = state.currentScan.nis;
+
+      updateScanScoreDisplay();
+
+      const grid = document.getElementById('scanAnswersGrid');
+      const opts = getOptionLetters(state.config.optionType);
+      grid.innerHTML = '';
+
+      for (let q = 1; q <= state.config.numQuestions; q++) {
+        const stuAns = state.currentScan.answers[q] || '';
+        const keyAns = state.config.answerKey[q] || '';
+        const isCorrect = stuAns && stuAns === keyAns;
+        const isWrong = stuAns && stuAns !== keyAns;
+
+        const cell = document.createElement('div');
+        cell.className = `p-2 rounded-lg border-2 border-navy flex flex-col gap-1.5 ${
+          isCorrect ? 'bg-mintNeo/40' : isWrong ? 'bg-coralNeo/40' : 'bg-cream'
+        }`;
+
+        cell.innerHTML = `
+          <div class="flex justify-between items-center text-[11px] font-display font-bold">
+            <span>#${String(q).padStart(2, '0')}</span>
+            <span class="px-1.5 py-0.5 rounded bg-navy text-cream text-[10px]">Kunci: ${keyAns || '-'}</span>
+          </div>
+        `;
+
+        const rowBtns = document.createElement('div');
+        rowBtns.className = 'flex justify-between gap-1';
+
+        opts.forEach(letter => {
+          const b = document.createElement('button');
+          const sel = stuAns === letter;
+          b.type = 'button';
+          b.className = `flex-1 py-1 rounded border border-navy font-display font-bold text-xs ${
+            sel ? 'bg-navy text-skyNeo' : 'bg-white text-navy hover:bg-skySoft'
+          }`;
+          b.textContent = letter;
+          b.onclick = () => {
+            state.currentScan.answers[q] = sel ? '' : letter;
+            renderScanVerification();
+          };
+          rowBtns.appendChild(b);
+        });
+
+        cell.appendChild(rowBtns);
+        grid.appendChild(cell);
+      }
+    }
+
+    function updateScanScoreDisplay() {
+      const { correct, wrong, blank, score } = evaluateAnswers(state.currentScan.answers);
+      const passed = score >= state.config.kkm;
+
+      document.getElementById('scanStatCorrect').textContent = correct;
+      document.getElementById('scanStatWrong').textContent = wrong;
+      document.getElementById('scanStatBlank').textContent = blank;
+      document.getElementById('scanStatStatus').textContent = passed ? 'TUNTAS' : 'REMEDIAL';
+
+      const badge = document.getElementById('scanScoreBadge');
+      badge.textContent = `Nilai: ${score}`;
+      badge.className = `px-4 py-2 rounded-lg border-3 border-navy font-display font-extrabold text-xl shadow-neoSm ${
+        passed ? 'bg-mintNeo text-navy' : 'bg-coralNeo text-navy'
+      }`;
+    }
+
+    document.getElementById('btnDiscardScan').addEventListener('click', () => {
+      state.currentScan = null;
+      document.getElementById('scanResultCard').classList.add('hidden');
+    });
+
+    document.getElementById('btnSaveScanResult').addEventListener('click', async () => {
+      if (!state.currentScan) return;
+      const name = document.getElementById('scanStudentName').value.trim();
+      const nis = document.getElementById('scanStudentNIS').value.trim();
+
+      if (!name) {
+        showToast("Nama siswa wajib diisi sebelum menyimpan!", "warning");
+        return;
+      }
+
+      const { correct, wrong, blank, score } = evaluateAnswers(state.currentScan.answers);
+      await addStudentResultToFirestore({
+        studentName: name,
+        nis: nis || '-',
+        answers: { ...state.currentScan.answers },
+        correct,
+        wrong,
+        blank,
+        score
+      });
+
+      state.currentScan = null;
+      document.getElementById('scanResultCard').classList.add('hidden');
+      document.getElementById('imagePreviewContainer').classList.add('hidden');
+    });
+
+    // ============================================================
+    // 8. HASIL SISWA & EKSPOR EXCEL
+    // ============================================================
+    function renderResultsView() {
+      const c = state.config;
+      document.getElementById('resultsExamMeta').textContent =
+        `${c.schoolName} • ${c.subject} (${c.className}) • KKM: ${c.kkm}`;
+
+      const list = state.results;
+      const total = list.length;
+      const avg = total ? Math.round((list.reduce((s, r) => s + r.score, 0) / total) * 10) / 10 : 0;
+      const passed = list.filter(r => r.score >= c.kkm).length;
+      const failed = total - passed;
+
+      document.getElementById('kpiTotalStudents').textContent = total;
+      document.getElementById('kpiAvgScore').textContent = avg;
+      document.getElementById('kpiPassed').textContent = passed;
+      document.getElementById('kpiFailed').textContent = failed;
+
+      const filtered = list.filter(r => {
+        const matchSearch = !state.searchQuery ||
+          r.studentName.toLowerCase().includes(state.searchQuery) ||
+          r.nis.toLowerCase().includes(state.searchQuery);
+        const isPass = r.score >= c.kkm;
+        const matchFilter = state.filterStatus === 'all' ||
+          (state.filterStatus === 'pass' && isPass) ||
+          (state.filterStatus === 'fail' && !isPass);
+        return matchSearch && matchFilter;
+      });
+
+      const tbody = document.getElementById('resultsTableBody');
+      const empty = document.getElementById('resultsEmptyState');
+      tbody.innerHTML = '';
+
+      if (filtered.length === 0) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      filtered.forEach((r, idx) => {
+        const isPass = r.score >= c.kkm;
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-creamDark/50 transition-colors';
+        tr.innerHTML = `
+          <td class="p-3.5 font-display font-bold">${idx + 1}</td>
+          <td class="p-3.5">
+            <div class="font-display font-bold text-navy">${escapeHtml(r.studentName)}</div>
+            <div class="text-xs text-navy/70">NIS: ${escapeHtml(r.nis)}</div>
+          </td>
+          <td class="p-3.5 text-center text-xs font-bold">
+            <span class="text-emerald-700">${r.correct}</span> /
+            <span class="text-rose-700">${r.wrong}</span> /
+            <span class="text-slate-500">${r.blank}</span>
+          </td>
+          <td class="p-3.5 text-center">
+            <span class="inline-block px-2.5 py-1 rounded-lg border-2 border-navy font-display font-extrabold text-sm ${
+              isPass ? 'bg-skySoft' : 'bg-coralNeo/70'
+            }">${r.score}</span>
+          </td>
+          <td class="p-3.5 text-center">
+            <span class="inline-block px-2 py-0.5 rounded border-2 border-navy text-[11px] font-display font-bold ${
+              isPass ? 'bg-mintNeo text-navy' : 'bg-coralNeo text-navy'
+            }">${isPass ? 'TUNTAS' : 'REMEDIAL'}</span>
+          </td>
+          <td class="p-3.5 text-right whitespace-nowrap space-x-1.5">
+            <button data-detail-id="${r.id}" class="btn-detail neo-btn px-2.5 py-1 bg-white text-navy text-xs">Detail</button>
+            <button data-del-id="${r.id}" class="btn-del neo-btn px-2.5 py-1 bg-coralNeo text-navy text-xs">Hapus</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Attach Detail & Delete handlers
+      tbody.querySelectorAll('.btn-detail').forEach(btn => {
+        btn.onclick = () => showStudentDetailModal(btn.dataset.detailId);
+      });
+      tbody.querySelectorAll('.btn-del').forEach(btn => {
+        btn.onclick = () => {
+          const target = state.results.find(x => x.id === btn.dataset.delId);
+          if (!target) return;
+          openModal({
+            title: 'Hapus Hasil Siswa',
+            bodyHtml: `<p>Apakah Anda yakin ingin menghapus nilai milik <strong>${escapeHtml(target.studentName)}</strong> (NIS: ${escapeHtml(target.nis)})?</p>`,
+            buttons: [
+              { label: 'Batal', className: 'bg-creamDark text-navy' },
+              { label: 'Ya, Hapus', className: 'bg-coralNeo text-navy', onClick: () => deleteStudentResult(target.id) }
+            ]
+          });
+        };
+      });
+    }
+
+    function showStudentDetailModal(id) {
+      const r = state.results.find(x => x.id === id);
+      if (!r) return;
+      const total = state.config.numQuestions;
+      let gridHtml = '<div class="grid grid-cols-4 sm:grid-cols-5 gap-2">';
+      for (let q = 1; q <= total; q++) {
+        const ans = r.answers[q] || '-';
+        const key = state.config.answerKey[q] || '-';
+        const ok = ans !== '-' && ans === key;
+        gridHtml += `
+          <div class="p-2 rounded-lg border-2 border-navy text-center ${ok ? 'bg-mintNeo/50' : ans === '-' ? 'bg-creamDark' : 'bg-coralNeo/50'}">
+            <div class="text-[10px] font-bold">No ${q}</div>
+            <div class="font-display font-extrabold text-sm">${ans}</div>
+            <div class="text-[10px] text-navy/70">Kunci: ${key}</div>
+          </div>
+        `;
+      }
+      gridHtml += '</div>';
+
+      openModal({
+        title: `Detail Jawaban — ${r.studentName}`,
+        bodyHtml: `
+          <div class="flex flex-wrap justify-between gap-2 p-3 bg-skySoft border-2 border-navy rounded-lg font-display font-bold text-xs">
+            <span>NIS: ${escapeHtml(r.nis)}</span>
+            <span>Benar: ${r.correct} | Salah: ${r.wrong} | Kosong: ${r.blank}</span>
+            <span>Nilai: ${r.score}</span>
+          </div>
+          ${gridHtml}
+        `,
+        buttons: [{ label: 'Tutup', className: 'bg-navy text-cream' }]
+      });
+    }
+
+    // Search & filter listeners
+    document.getElementById('inpSearchStudent').addEventListener('input', (e) => {
+      state.searchQuery = e.target.value.trim().toLowerCase();
+      renderResultsView();
+    });
+
+    document.querySelectorAll('.res-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.filterStatus = btn.dataset.filter;
+        document.querySelectorAll('.res-filter').forEach(b => {
+          const active = b.dataset.filter === state.filterStatus;
+          b.classList.toggle('bg-skyNeo', active);
+          b.classList.toggle('bg-white', !active);
+        });
+        renderResultsView();
+      });
+    });
+
+    // Export Results to Excel (.xlsx)
+    document.getElementById('btnExportResultsExcel').addEventListener('click', () => {
+      if (state.results.length === 0) {
+        showToast("Belum ada data siswa untuk diekspor.", "warning");
+        return;
+      }
+      const c = state.config;
+      const rows = state.results.map((r, i) => {
+        const obj = {
+          'No': i + 1,
+          'Nama Siswa': r.studentName,
+          'NIS': r.nis,
+          'Benar': r.correct,
+          'Salah': r.wrong,
+          'Kosong': r.blank,
+          'Nilai': r.score,
+          'Status KKM': r.score >= c.kkm ? 'TUNTAS' : 'REMEDIAL',
+          'Waktu Pindai': new Date(r.createdAt).toLocaleString('id-ID')
+        };
+        for (let q = 1; q <= c.numQuestions; q++) {
+          obj[`S${q}`] = r.answers[q] || '-';
+        }
+        return obj;
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Hasil Siswa');
+      const safeName = `${c.subject}_${c.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      XLSX.writeFile(wb, `Hasil_Siswa_${safeName}.xlsx`);
+      showToast("File Excel Hasil Siswa berhasil diunduh!", "success");
+    });
+
+    // ============================================================
+    // 9. ANALISIS BUTIR SOAL & EKSPOR EXCEL MULTI-SHEET
+    // ============================================================
+    function computeItemAnalysis() {
+      const list = state.results;
+      const totalStudents = list.length;
+      const totalQ = state.config.numQuestions;
+      const opts = getOptionLetters(state.config.optionType);
+
+      const items = [];
+      for (let q = 1; q <= totalQ; q++) {
+        const key = state.config.answerKey[q] || '-';
+        let correct = 0;
+        let wrong = 0;
+        const dist = { Kosong: 0 };
+        opts.forEach(o => dist[o] = 0);
+
+        list.forEach(r => {
+          const ans = r.answers[q] || '';
+          if (!ans) {
+            dist.Kosong++;
+            wrong++;
+          } else {
+            if (dist[ans] !== undefined) dist[ans]++;
+            if (ans === key) correct++;
+            else wrong++;
+          }
+        });
+
+        const pct = totalStudents > 0 ? Math.round((correct / totalStudents) * 100) : 0;
+        let category = 'Sedang';
+        if (pct > 70) category = 'Mudah';
+        else if (pct < 30) category = 'Sukar';
+
+        items.push({ number: q, key, correct, wrong, pct, category, dist });
+      }
+      return items;
+    }
+
+    function renderAnalysisView() {
+      const list = state.results;
+      const empty = document.getElementById('analysisEmptyState');
+      const content = document.getElementById('analysisContent');
+
+      if (list.length === 0) {
+        empty.classList.remove('hidden');
+        content.classList.add('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+      content.classList.remove('hidden');
+
+      // Class Statistics
+      const scores = list.map(r => r.score).sort((a, b) => a - b);
+      const max = scores[scores.length - 1];
+      const min = scores[0];
+      const mean = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+      const mid = Math.floor(scores.length / 2);
+      const median = scores.length % 2 !== 0 ? scores[mid] : Math.round(((scores[mid - 1] + scores[mid]) / 2) * 10) / 10;
+      const passRate = Math.round((list.filter(r => r.score >= state.config.kkm).length / list.length) * 100);
+
+      document.getElementById('statMax').textContent = max;
+      document.getElementById('statMin').textContent = min;
+      document.getElementById('statMean').textContent = mean;
+      document.getElementById('statMedian').textContent = median;
+      document.getElementById('statPassRate').textContent = `${passRate}%`;
+
+      // Score Distribution Bars
+      const buckets = [
+        { label: '85 - 100 (Sangat Baik)', min: 85, max: 100, color: 'bg-mintNeo' },
+        { label: '75 - 84 (Baik)', min: 75, max: 84, color: 'bg-skyNeo' },
+        { label: '60 - 74 (Cukup)', min: 60, max: 74, color: 'bg-amberNeo' },
+        { label: '0 - 59 (Perlu Bimbingan)', min: 0, max: 59, color: 'bg-coralNeo' }
+      ];
+      const distContainer = document.getElementById('scoreDistBars');
+      distContainer.innerHTML = '';
+      buckets.forEach(b => {
+        const count = scores.filter(s => s >= b.min && s <= b.max).length;
+        const pct = Math.round((count / scores.length) * 100);
+        distContainer.innerHTML += `
+          <div class="space-y-1">
+            <div class="flex justify-between text-xs font-display font-bold">
+              <span>${b.label}</span>
+              <span>${count} siswa (${pct}%)</span>
+            </div>
+            <div class="w-full h-6 bg-creamDark border-2 border-navy rounded-md overflow-hidden">
+              <div class="h-full ${b.color} border-r-2 border-navy transition-all duration-500" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      });
+
+      // Item Analysis
+      const items = computeItemAnalysis();
+      const opts = getOptionLetters(state.config.optionType);
+
+      document.getElementById('diffEasyCount').textContent = items.filter(i => i.category === 'Mudah').length;
+      document.getElementById('diffMedCount').textContent = items.filter(i => i.category === 'Sedang').length;
+      document.getElementById('diffHardCount').textContent = items.filter(i => i.category === 'Sukar').length;
+
+      const tbody = document.getElementById('itemAnalysisBody');
+      tbody.innerHTML = '';
+
+      items.forEach(item => {
+        const catColor = item.category === 'Mudah' ? 'bg-mintNeo' : item.category === 'Sedang' ? 'bg-amberNeo' : 'bg-coralNeo';
+        const distPills = opts.map(o => {
+          const isKey = o === item.key;
+          return `<span class="inline-block px-1.5 py-0.5 mr-1 mb-1 rounded border border-navy text-[11px] font-bold ${
+            isKey ? 'bg-navy text-skyNeo' : 'bg-cream'
+          }">${o}:${item.dist[o]}</span>`;
+        }).join('') + `<span class="inline-block px-1.5 py-0.5 rounded border border-navy/50 text-[11px] bg-slate-100">Kosong:${item.dist.Kosong}</span>`;
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-creamDark/40';
+        tr.innerHTML = `
+          <td class="p-3 font-display font-bold">${String(item.number).padStart(2, '0')}</td>
+          <td class="p-3 text-center">
+            <span class="inline-block w-7 h-7 leading-6 rounded-full bg-navy text-skyNeo font-display font-bold text-xs">${item.key}</span>
+          </td>
+          <td class="p-3 text-center font-bold text-emerald-700">${item.correct}</td>
+          <td class="p-3 text-center font-bold text-rose-700">${item.wrong}</td>
+          <td class="p-3 min-w-[160px]">
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded border-2 border-navy text-[11px] font-display font-bold ${catColor}">${item.category} (${item.pct}%)</span>
+            </div>
+          </td>
+          <td class="p-3">${distPills}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Export Complete Analysis Workbook (.xlsx)
+    document.getElementById('btnExportAnalysisExcel').addEventListener('click', () => {
+      if (state.results.length === 0) {
+        showToast("Belum ada data untuk diekspor.", "warning");
+        return;
+      }
+      const c = state.config;
+      const list = state.results;
+      const scores = list.map(r => r.score).sort((a, b) => a - b);
+      const mean = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
+      const passCount = list.filter(r => r.score >= c.kkm).length;
+
+      // Sheet 1: Ringkasan Statistik
+      const summaryData = [
+        { Parameter: 'Nama Sekolah', Nilai: c.schoolName },
+        { Parameter: 'Judul Ujian', Nilai: c.examTitle },
+        { Parameter: 'Mata Pelajaran', Nilai: c.subject },
+        { Parameter: 'Kelas', Nilai: c.className },
+        { Parameter: 'KKM', Nilai: c.kkm },
+        { Parameter: 'Jumlah Soal PG', Nilai: c.numQuestions },
+        { Parameter: 'Opsi Jawaban', Nilai: c.optionType },
+        { Parameter: 'Total Siswa', Nilai: list.length },
+        { Parameter: 'Rata-rata Nilai', Nilai: mean },
+        { Parameter: 'Nilai Tertinggi', Nilai: scores[scores.length - 1] },
+        { Parameter: 'Nilai Terendah', Nilai: scores[0] },
+        { Parameter: 'Jumlah Tuntas', Nilai: passCount },
+        { Parameter: 'Persentase Ketuntasan', Nilai: `${Math.round((passCount / list.length) * 100)}%` }
+      ];
+
+      // Sheet 2: Analisis Butir Soal
+      const opts = getOptionLetters(c.optionType);
+      const items = computeItemAnalysis();
+      const itemRows = items.map(it => {
+        const row = {
+          'No Soal': it.number,
+          'Kunci Jawaban': it.key,
+          'Jumlah Benar': it.correct,
+          'Jumlah Salah': it.wrong,
+          'Persentase Benar (%)': it.pct,
+          'Kategori Kesukaran': it.category
+        };
+        opts.forEach(o => row[`Pilih ${o}`] = it.dist[o]);
+        row['Kosong'] = it.dist.Kosong;
+        return row;
+      });
+
+      // Sheet 3: Rekap Nilai Siswa
+      const studentRows = list.map((r, i) => ({
+        'No': i + 1,
+        'Nama Siswa': r.studentName,
+        'NIS': r.nis,
+        'Benar': r.correct,
+        'Salah': r.wrong,
+        'Kosong': r.blank,
+        'Nilai': r.score,
+        'Status': r.score >= c.kkm ? 'TUNTAS' : 'REMEDIAL'
+      }));
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryData), 'Ringkasan Statistik');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), 'Analisis Butir Soal');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(studentRows), 'Rekap Nilai Siswa');
+
+      const safeName = `${c.subject}_${c.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      XLSX.writeFile(wb, `Analisis_Ujian_${safeName}.xlsx`);
+      showToast("File Excel Analisis Lengkap berhasil diunduh!", "success");
+    });
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[m]);
+    }
+
+    // ============================================================
+    // 10. INITIALIZATION ON LOAD
+    // ============================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      ensureDefaultAnswerKey();
+      syncConfigUI();
+      renderLJKCanvas();
+      initFirebase();
+    });
+  </script>
+</body>
+</html>
