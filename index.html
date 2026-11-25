@@ -431,24 +431,35 @@
 
         <!-- Uploaded / Captured Image Preview + Scanning Loader -->
         <div id="imagePreviewContainer" class="hidden space-y-3">
-          <div class="relative w-full max-h-[420px] bg-creamDark rounded-xl border-3 border-navy overflow-hidden flex items-center justify-center">
-            <img id="scannedPreviewImg" alt="Pratinjau LJK" class="max-h-[400px] w-auto object-contain" />
+          <div class="relative w-full max-h-[480px] bg-creamDark rounded-xl border-3 border-navy overflow-hidden flex items-center justify-center">
+            <img id="scannedPreviewImg" alt="Pratinjau LJK" class="max-h-[460px] w-auto object-contain" />
             <!-- Scanning Overlay -->
             <div id="scanLoadingOverlay" class="hidden absolute inset-0 bg-navy/75 flex flex-col items-center justify-center text-cream p-4 text-center">
               <div class="scan-laser absolute left-0 right-0 h-1 bg-skyNeo shadow-[0_0_12px_#7DD3FC]"></div>
               <div class="w-12 h-12 border-4 border-skyNeo border-t-transparent rounded-full animate-spin mb-3"></div>
-              <p class="font-display font-bold text-lg text-skyNeo">Memindai LJK dengan AI...</p>
-              <p class="text-xs text-cream/80 mt-1">Membaca identitas siswa, bulatan NIS, dan jawaban pilihan ganda.</p>
+              <p class="font-display font-bold text-lg text-skyNeo">Memindai LJK (OMR Lokal)...</p>
+              <p class="text-xs text-cream/80 mt-1">Mendeteksi 4 penanda sudut, bulatan NIS, dan mencocokkan dengan Kunci Jawaban.</p>
             </div>
           </div>
-          <div class="flex flex-wrap justify-center gap-3">
-            <button id="btnProcessImage" class="neo-btn px-6 py-2.5 bg-navy text-cream text-sm">
-              Pindai Ulang Foto Ini
-            </button>
-            <button id="btnClearPreview" class="neo-btn px-4 py-2.5 bg-creamDark text-navy text-sm">
-              Hapus Foto
-            </button>
+
+          <!-- OMR Sensitivity Control & Re-scan Actions -->
+          <div class="p-3 bg-cream border-2 border-navy rounded-xl flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3 flex-1 min-w-[220px]">
+              <label for="omrSensitivity" class="font-display font-bold text-xs uppercase whitespace-nowrap">
+                Sensitivitas Tinta: <span id="omrSensitivityVal" class="text-navyLight">Normal</span>
+              </label>
+              <input id="omrSensitivity" type="range" min="25" max="60" value="38" class="flex-1 accent-navy cursor-pointer" />
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button id="btnProcessImage" class="neo-btn px-4 py-2 bg-navy text-cream text-xs sm:text-sm">
+                Pindai Ulang
+              </button>
+              <button id="btnClearPreview" class="neo-btn px-3.5 py-2 bg-creamDark text-navy text-xs sm:text-sm">
+                Hapus Foto
+              </button>
+            </div>
           </div>
+          <p id="omrDetectBadge" class="hidden text-xs font-display font-bold text-center px-3 py-1.5 rounded-lg border-2 border-navy bg-skySoft"></p>
         </div>
       </div>
 
@@ -755,36 +766,20 @@
       filterStatus: "all", // 'all' | 'pass' | 'fail'
       searchQuery: "",
       currentScan: null,   // { studentName, nis, answers: { "1": "A", ... } }
-      capturedBase64: null,
+      capturedDataUrl: null,
+      omrThreshold: 0.38,  // Minimum bubble fill ratio (0.25 - 0.60)
       cameraStream: null
     };
 
-    // Firebase runtime handles
-    let db = null;
-    let auth = null;
-    let currentUser = null;
-    let unsubscribeResults = null;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-    // Initialize default sample answer key so user can test immediately
-    function ensureDefaultAnswerKey() {
-      const opts = getOptionLetters(state.config.optionType);
-      for (let i = 1; i <= state.config.numQuestions; i++) {
-        if (!state.config.answerKey[i] || !opts.includes(state.config.answerKey[i])) {
-          state.config.answerKey[i] = opts[(i - 1) % opts.length];
-        }
-      }
-    }
-
+    // ============================================================
+    // 2. UTILITY HELPERS (TOAST, MODAL, OPTION LETTERS)
+    // ============================================================
     function getOptionLetters(optionType) {
       if (optionType === 'A-C') return ['A', 'B', 'C'];
       if (optionType === 'A-E') return ['A', 'B', 'C', 'D', 'E'];
       return ['A', 'B', 'C', 'D'];
     }
 
-    // ============================================================
-    // 2. TOAST & CUSTOM MODAL HELPERS (NO alert / confirm)
-    // ============================================================
     function showToast(message, type = 'info') {
       const container = document.getElementById('toastContainer');
       const colors = {
@@ -793,218 +788,199 @@
         warning: 'bg-amberNeo text-navy',
         info: 'bg-skyNeo text-navy'
       };
-      const el = document.createElement('div');
-      el.className = `pointer-events-auto px-4 py-2.5 rounded-xl border-3 border-navy shadow-neo font-display font-bold text-xs sm:text-sm ${colors[type] || colors.info} transition-all duration-300`;
-      el.textContent = message;
-      container.appendChild(el);
+      const toast = document.createElement('div');
+      toast.className = `pointer-events-auto max-w-xs sm:max-w-sm px-4 py-3 rounded-xl border-3 border-navy shadow-neo font-display font-bold text-xs sm:text-sm transition-all duration-200 ${colors[type] || colors.info}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
       setTimeout(() => {
-        el.style.opacity = '0';
-        el.style.transform = 'translateX(20px)';
-        setTimeout(() => el.remove(), 300);
-      }, 3200);
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(16px)';
+        setTimeout(() => toast.remove(), 220);
+      }, 3400);
     }
 
+    const modalEl = document.getElementById('customModal');
+    function closeModal() {
+      modalEl.classList.add('hidden');
+    }
+
+    document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+    modalEl.addEventListener('click', (e) => {
+      if (e.target === modalEl) closeModal();
+    });
+
     function openModal({ title, bodyHtml, buttons = [] }) {
-      const modal = document.getElementById('customModal');
       document.getElementById('modalTitle').textContent = title;
       document.getElementById('modalBody').innerHTML = bodyHtml;
       const footer = document.getElementById('modalFooter');
       footer.innerHTML = '';
 
-      buttons.forEach(btn => {
-        const b = document.createElement('button');
-        b.className = `neo-btn px-4 py-2 text-sm ${btn.className || 'bg-white text-navy'}`;
-        b.textContent = btn.label;
-        b.onclick = () => {
-          if (btn.onClick) btn.onClick();
+      buttons.forEach(btnCfg => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `neo-btn px-4 py-2 text-xs sm:text-sm ${btnCfg.className || 'bg-white text-navy'}`;
+        btn.textContent = btnCfg.label;
+        btn.onclick = async () => {
+          if (btnCfg.onClick) await btnCfg.onClick();
           closeModal();
         };
-        footer.appendChild(b);
+        footer.appendChild(btn);
       });
 
-      modal.classList.remove('hidden');
+      modalEl.classList.remove('hidden');
     }
 
-    function closeModal() {
-      document.getElementById('customModal').classList.add('hidden');
-    }
-
-    document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
-
-    // ============================================================
-    // 3. FIREBASE INITIALIZATION & REAL-TIME SYNC
-    // ============================================================
-    async function initFirebase() {
+    function setDbStatus(mode, text) {
       const dot = document.getElementById('dbStatusDot');
-      const txt = document.getElementById('dbStatusText');
+      const label = document.getElementById('dbStatusText');
+      label.textContent = text;
+      dot.className = 'w-2.5 h-2.5 rounded-full ' + (
+        mode === 'online' ? 'bg-mintNeo' :
+        mode === 'local' ? 'bg-skyNeo' :
+        'bg-amberNeo animate-pulse'
+      );
+    }
 
+    // ============================================================
+    // 3. FIREBASE FIRESTORE & LOCAL STORAGE FALLBACK
+    // ============================================================
+    let db = null;
+    let currentUserId = null;
+    let useLocalFallback = false;
+    const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'brutalgrade-default';
+    const LS_CONFIG_KEY = `brutalgrade_config_${appId}`;
+    const LS_RESULTS_KEY = `brutalgrade_results_${appId}`;
+
+    function loadLocalFallbackData() {
       try {
-        if (typeof __firebase_config === 'undefined') {
-          dot.className = 'w-2.5 h-2.5 rounded-full bg-amberNeo';
-          txt.textContent = 'Mode Lokal';
+        const savedCfg = localStorage.getItem(LS_CONFIG_KEY);
+        if (savedCfg) {
+          state.config = { ...state.config, ...JSON.parse(savedCfg) };
+        }
+        const savedRes = localStorage.getItem(LS_RESULTS_KEY);
+        if (savedRes) {
+          state.results = JSON.parse(savedRes);
+        }
+      } catch (err) {
+        console.warn("LocalStorage read error:", err);
+      }
+      ensureDefaultAnswerKey();
+      syncConfigUI();
+      renderLJKCanvas();
+      renderResultsView();
+      renderAnalysisView();
+    }
+
+    async function initFirebase() {
+      try {
+        const rawConfig = typeof window.__firebase_config !== 'undefined' ? window.__firebase_config : null;
+        if (!rawConfig) {
+          useLocalFallback = true;
+          setDbStatus('local', 'Mode Lokal');
+          loadLocalFallbackData();
           return;
         }
 
-        const firebaseConfig = JSON.parse(__firebase_config);
+        const firebaseConfig = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : rawConfig;
         const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
+        const auth = getAuth(app);
         db = getFirestore(app);
 
-        // RULE 3: Authenticate BEFORE any Firestore queries
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+        if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token) {
+          const cred = await signInWithCustomToken(auth, window.__initial_auth_token);
+          currentUserId = cred.user.uid;
         } else {
-          await signInAnonymously(auth);
+          const cred = await signInAnonymously(auth);
+          currentUserId = cred.user.uid;
         }
 
-        currentUser = auth.currentUser;
-        if (!currentUser) throw new Error("Autentikasi gagal.");
+        setDbStatus('online', 'Firebase Aktif');
 
-        dot.className = 'w-2.5 h-2.5 rounded-full bg-mintNeo';
-        txt.textContent = 'Terhubung';
-
-        // Load saved exam config if exists
-        await loadConfigFromFirestore();
-        // Subscribe to student results
-        subscribeStudentResults();
-      } catch (err) {
-        console.error("Firebase init error:", err);
-        dot.className = 'w-2.5 h-2.5 rounded-full bg-coralNeo';
-        txt.textContent = 'Offline';
-        showToast("Mode offline aktif. Data disimpan di sesi ini.", "warning");
-      }
-    }
-
-    async function loadConfigFromFirestore() {
-      if (!db || !currentUser) return;
-      try {
-        const cfgRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'exam_configs', 'active_config');
-        const snap = await getDoc(cfgRef);
-        if (snap.exists()) {
-          const data = snap.data();
-          state.config = {
-            ...state.config,
-            ...data,
-            answerKey: data.answerKey ? JSON.parse(data.answerKey) : state.config.answerKey
-          };
+        // Load saved exam config
+        const cfgRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'settings', 'examConfig');
+        const cfgSnap = await getDoc(cfgRef);
+        if (cfgSnap.exists()) {
+          state.config = { ...state.config, ...cfgSnap.data() };
+          ensureDefaultAnswerKey();
           syncConfigUI();
           renderLJKCanvas();
         }
+
+        // Realtime listener for student results
+        const resultsCol = collection(db, 'artifacts', appId, 'users', currentUserId, 'results');
+        onSnapshot(resultsCol, (snapshot) => {
+          const items = [];
+          snapshot.forEach(docSnap => {
+            items.push({ id: docSnap.id, ...docSnap.data() });
+          });
+          items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          state.results = items;
+          renderResultsView();
+          renderAnalysisView();
+        }, (err) => {
+          console.error("Firestore snapshot error:", err);
+          showToast("Gagal sinkronisasi real-time Firebase.", "warning");
+        });
       } catch (err) {
-        console.error("Gagal memuat konfigurasi:", err);
+        console.warn("Firebase init fallback to local:", err);
+        useLocalFallback = true;
+        setDbStatus('local', 'Mode Lokal');
+        loadLocalFallbackData();
       }
     }
 
     async function saveConfigToFirestore(silent = false) {
-      if (!db || !currentUser) {
-        if (!silent) showToast("Konfigurasi tersimpan di sesi lokal.", "info");
-        return;
-      }
       try {
-        const cfgRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'exam_configs', 'active_config');
-        await setDoc(cfgRef, {
-          schoolName: state.config.schoolName,
-          examTitle: state.config.examTitle,
-          subject: state.config.subject,
-          className: state.config.className,
-          kkm: Number(state.config.kkm),
-          digitNis: Number(state.config.digitNis),
-          numQuestions: Number(state.config.numQuestions),
-          optionType: state.config.optionType,
-          columns: Number(state.config.columns),
-          answerKey: JSON.stringify(state.config.answerKey),
-          updatedAt: new Date().toISOString()
-        });
-        if (!silent) showToast("Konfigurasi tersimpan ke database!", "success");
-      } catch (err) {
-        console.error("Gagal menyimpan konfigurasi:", err);
-        showToast("Gagal menyimpan ke database.", "error");
-      }
-    }
-
-    function subscribeStudentResults() {
-      if (!db || !currentUser) return;
-      if (unsubscribeResults) unsubscribeResults();
-
-      // RULE 1 & 2: Strict user path, simple collection query (sort in memory)
-      const colRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'student_results');
-      unsubscribeResults = onSnapshot(
-        colRef,
-        (snapshot) => {
-          const list = [];
-          snapshot.forEach(docSnap => {
-            const d = docSnap.data();
-            list.push({
-              id: docSnap.id,
-              studentName: d.studentName || 'Tanpa Nama',
-              nis: d.nis || '-',
-              answers: typeof d.answers === 'string' ? JSON.parse(d.answers) : (d.answers || {}),
-              correct: Number(d.correct || 0),
-              wrong: Number(d.wrong || 0),
-              blank: Number(d.blank || 0),
-              score: Number(d.score || 0),
-              kkmAtScan: Number(d.kkmAtScan || state.config.kkm),
-              numQuestions: Number(d.numQuestions || state.config.numQuestions),
-              createdAt: d.createdAt || new Date().toISOString()
-            });
-          });
-          // Sort newest first in JS memory
-          list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-          state.results = list;
-          renderResultsView();
-          renderAnalysisView();
-        },
-        (error) => {
-          console.error("Snapshot error:", error);
-          showToast("Gagal menyinkronkan data hasil siswa.", "error");
+        localStorage.setItem(LS_CONFIG_KEY, JSON.stringify(state.config));
+        if (!useLocalFallback && db && currentUserId) {
+          const cfgRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'settings', 'examConfig');
+          await setDoc(cfgRef, state.config, { merge: true });
         }
-      );
+        if (!silent) showToast("Konfigurasi ujian berhasil disimpan!", "success");
+      } catch (err) {
+        console.error("Save config error:", err);
+        showToast("Tersimpan di perangkat lokal.", "info");
+      }
     }
 
     async function addStudentResultToFirestore(record) {
-      if (!db || !currentUser) {
-        // Fallback in-memory if offline
-        state.results.unshift({ id: 'local_' + Date.now(), ...record });
-        renderResultsView();
-        renderAnalysisView();
-        showToast("Hasil disimpan di sesi lokal!", "success");
-        return;
-      }
+      const payload = {
+        ...record,
+        createdAt: Date.now()
+      };
       try {
-        const colRef = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'student_results');
-        await addDoc(colRef, {
-          studentName: record.studentName,
-          nis: record.nis,
-          answers: JSON.stringify(record.answers),
-          correct: record.correct,
-          wrong: record.wrong,
-          blank: record.blank,
-          score: record.score,
-          kkmAtScan: state.config.kkm,
-          numQuestions: state.config.numQuestions,
-          createdAt: new Date().toISOString()
-        });
-        showToast(`Nilai ${record.studentName} berhasil disimpan!`, "success");
+        if (!useLocalFallback && db && currentUserId) {
+          const resultsCol = collection(db, 'artifacts', appId, 'users', currentUserId, 'results');
+          await addDoc(resultsCol, payload);
+        } else {
+          const localItem = { id: 'loc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), ...payload };
+          state.results.unshift(localItem);
+          localStorage.setItem(LS_RESULTS_KEY, JSON.stringify(state.results));
+          renderResultsView();
+          renderAnalysisView();
+        }
+        showToast(`Hasil milik ${record.studentName} berhasil disimpan!`, "success");
       } catch (err) {
-        console.error("Gagal menyimpan hasil:", err);
+        console.error("Add result error:", err);
         showToast("Gagal menyimpan hasil ke database.", "error");
       }
     }
 
     async function deleteStudentResult(id) {
-      if (!db || !currentUser || id.startsWith('local_')) {
-        state.results = state.results.filter(r => r.id !== id);
-        renderResultsView();
-        renderAnalysisView();
-        showToast("Data siswa dihapus.", "info");
-        return;
-      }
       try {
-        const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'student_results', id);
-        await deleteDoc(docRef);
-        showToast("Data siswa dihapus dari database.", "info");
+        if (!useLocalFallback && db && currentUserId && !String(id).startsWith('loc_')) {
+          const docRef = doc(db, 'artifacts', appId, 'users', currentUserId, 'results', id);
+          await deleteDoc(docRef);
+        } else {
+          state.results = state.results.filter(r => r.id !== id);
+          localStorage.setItem(LS_RESULTS_KEY, JSON.stringify(state.results));
+          renderResultsView();
+          renderAnalysisView();
+        }
+        showToast("Data siswa berhasil dihapus.", "info");
       } catch (err) {
-        console.error("Gagal menghapus:", err);
+        console.error("Delete result error:", err);
         showToast("Gagal menghapus data siswa.", "error");
       }
     }
@@ -1012,67 +988,95 @@
     // ============================================================
     // 4. NAVIGATION (BOTTOM BAR & CONFIG SUBTABS)
     // ============================================================
-    window.switchMainTab = function(tabName) {
-      const tabs = ['config', 'scan', 'results', 'analysis'];
-      tabs.forEach(t => {
-        document.getElementById(`tab-${t}`).classList.toggle('hidden', t !== tabName);
-      });
-
-      // Stop camera when leaving scan tab
+    function switchMainTab(tabName) {
       if (tabName !== 'scan') stopCamera();
 
-      // Update bottom nav visual state
-      document.querySelectorAll('.nav-btn').forEach(btn => {
-        const active = btn.dataset.tab === tabName;
-        if (active) {
-          btn.classList.add('bg-skyNeo', 'border-navy', 'shadow-neoSm');
-          btn.classList.remove('bg-transparent', 'border-transparent');
-        } else {
-          btn.classList.remove('bg-skyNeo', 'border-navy', 'shadow-neoSm');
-          btn.classList.add('bg-transparent', 'border-transparent');
-        }
+      ['config', 'scan', 'results', 'analysis'].forEach(t => {
+        const el = document.getElementById(`tab-${t}`);
+        if (el) el.classList.toggle('hidden', t !== tabName);
       });
 
-      if (tabName === 'config') renderLJKCanvas();
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        const active = btn.dataset.tab === tabName;
+        btn.classList.toggle('bg-skyNeo', active);
+        btn.classList.toggle('border-navy', active);
+        btn.classList.toggle('bg-transparent', !active);
+        btn.classList.toggle('border-transparent', !active);
+      });
+
       if (tabName === 'scan') updateScanSummaryBadge();
       if (tabName === 'results') renderResultsView();
       if (tabName === 'analysis') renderAnalysisView();
-
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
+    }
+    window.switchMainTab = switchMainTab;
 
-    function switchConfigSubtab(subName) {
-      document.querySelectorAll('.config-panel').forEach(p => p.classList.add('hidden'));
-      document.getElementById(`subtab-${subName}`).classList.remove('hidden');
-
-      document.querySelectorAll('.config-subtab').forEach(btn => {
-        const active = btn.dataset.subtab === subName;
-        btn.classList.toggle('bg-skyNeo', active);
-        btn.classList.toggle('bg-white', !active);
+    function switchConfigSubtab(subtab) {
+      document.querySelectorAll('.config-panel').forEach(p => {
+        p.classList.toggle('hidden', p.id !== `subtab-${subtab}`);
       });
-
-      if (subName === 'kunci') renderAnswerKeyGrid();
-      if (subName === 'preview') renderLJKCanvas();
+      document.querySelectorAll('.config-subtab').forEach(b => {
+        const active = b.dataset.subtab === subtab;
+        b.classList.toggle('bg-skyNeo', active);
+        b.classList.toggle('bg-white', !active);
+      });
+      if (subtab === 'kunci') renderAnswerKeyGrid();
+      if (subtab === 'preview') renderLJKCanvas();
     }
 
     document.querySelectorAll('.config-subtab').forEach(btn => {
       btn.addEventListener('click', () => switchConfigSubtab(btn.dataset.subtab));
     });
+
     document.querySelectorAll('[data-goto-subtab]').forEach(btn => {
-      btn.addEventListener('click', () => switchConfigSubtab(btn.dataset.gotoSubtab));
+      btn.addEventListener('click', () => {
+        readKopInputs();
+        saveConfigToFirestore(true);
+        switchConfigSubtab(btn.dataset.gotoSubtab);
+      });
     });
 
     // ============================================================
-    // 5. KONFIGURASI KOP, FORMAT LJK, & KUNCI JAWABAN
+    // 5. KONFIGURASI KOP, FORMAT LJK & KUNCI JAWABAN
     // ============================================================
+    function ensureDefaultAnswerKey() {
+      const opts = getOptionLetters(state.config.optionType);
+      const total = Number(state.config.numQuestions);
+      if (!state.config.answerKey || typeof state.config.answerKey !== 'object') {
+        state.config.answerKey = {};
+      }
+      for (let q = 1; q <= total; q++) {
+        const cur = state.config.answerKey[q];
+        if (!cur || !opts.includes(cur)) {
+          state.config.answerKey[q] = opts[(q - 1) % opts.length];
+        }
+      }
+    }
+
+    function readKopInputs() {
+      const school = document.getElementById('inpSchool').value.trim();
+      const title = document.getElementById('inpTitle').value.trim();
+      const subject = document.getElementById('inpSubject').value.trim();
+      const cls = document.getElementById('inpClass').value.trim();
+      const kkmVal = Number(document.getElementById('inpKKM').value);
+
+      if (school) state.config.schoolName = school;
+      if (title) state.config.examTitle = title;
+      if (subject) state.config.subject = subject;
+      if (cls) state.config.className = cls;
+      if (!Number.isNaN(kkmVal) && kkmVal >= 0 && kkmVal <= 100) {
+        state.config.kkm = kkmVal;
+      }
+      document.getElementById('headerSubtitle').textContent = `${state.config.subject} • ${state.config.className}`;
+    }
+
     function syncConfigUI() {
       const c = state.config;
-      document.getElementById('inpSchool').value = c.schoolName;
-      document.getElementById('inpTitle').value = c.examTitle;
-      document.getElementById('inpSubject').value = c.subject;
-      document.getElementById('inpClass').value = c.className;
-      document.getElementById('inpKKM').value = c.kkm;
-
+      document.getElementById('inpSchool').value = c.schoolName || '';
+      document.getElementById('inpTitle').value = c.examTitle || '';
+      document.getElementById('inpSubject').value = c.subject || '';
+      document.getElementById('inpClass').value = c.className || '';
+      document.getElementById('inpKKM').value = c.kkm ?? 75;
       document.getElementById('headerSubtitle').textContent = `${c.subject} • ${c.className}`;
 
       // Highlight selected option buttons
@@ -1101,91 +1105,45 @@
       updateScanSummaryBadge();
     }
 
-    // Bind KOP inputs
-    ['inpSchool', 'inpTitle', 'inpSubject', 'inpClass', 'inpKKM'].forEach(id => {
-      document.getElementById(id).addEventListener('input', () => {
-        state.config.schoolName = document.getElementById('inpSchool').value.trim() || 'NAMA SEKOLAH';
-        state.config.examTitle = document.getElementById('inpTitle').value.trim() || 'UJIAN PILIHAN GANDA';
-        state.config.subject = document.getElementById('inpSubject').value.trim() || 'Mata Pelajaran';
-        state.config.className = document.getElementById('inpClass').value.trim() || 'Kelas';
-        state.config.kkm = Math.max(0, Math.min(100, Number(document.getElementById('inpKKM').value) || 0));
-        document.getElementById('headerSubtitle').textContent = `${state.config.subject} • ${state.config.className}`;
-      });
-    });
-
-    // Bind Format LJK selector buttons
-    document.querySelectorAll('.opt-nis').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.config.digitNis = Number(btn.dataset.val);
-        syncConfigUI();
-      });
-    });
-    document.querySelectorAll('.opt-q').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.config.numQuestions = Number(btn.dataset.val);
-        ensureDefaultAnswerKey();
-        syncConfigUI();
-      });
-    });
-    document.querySelectorAll('.opt-type').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.config.optionType = btn.dataset.val;
-        ensureDefaultAnswerKey();
-        syncConfigUI();
-      });
-    });
-    document.querySelectorAll('.opt-col').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.config.columns = Number(btn.dataset.val);
-        syncConfigUI();
-      });
-    });
-
-    // Save buttons
-    document.getElementById('btnSaveKop').addEventListener('click', () => saveConfigToFirestore(false));
-    document.getElementById('btnSaveFormat').addEventListener('click', () => saveConfigToFirestore(false));
-    document.getElementById('btnSaveKeys').addEventListener('click', () => saveConfigToFirestore(false));
-
-    // Render Answer Key Grid
     function renderAnswerKeyGrid() {
       const grid = document.getElementById('answerKeyGrid');
+      const total = Number(state.config.numQuestions);
       const opts = getOptionLetters(state.config.optionType);
-      const total = state.config.numQuestions;
       grid.innerHTML = '';
 
       let filled = 0;
       for (let q = 1; q <= total; q++) {
-        const currentAns = state.config.answerKey[q] || '';
-        if (opts.includes(currentAns)) filled++;
+        const currentKey = state.config.answerKey[q] || '';
+        if (currentKey && opts.includes(currentKey)) filled++;
 
-        const row = document.createElement('div');
-        row.className = 'flex items-center justify-between gap-2 p-2.5 bg-cream border-2 border-navy rounded-lg';
+        const card = document.createElement('div');
+        card.className = 'p-2.5 bg-cream border-2 border-navy rounded-lg flex items-center justify-between gap-2';
 
-        const numLabel = document.createElement('span');
-        numLabel.className = 'font-display font-extrabold text-sm w-7 text-navy';
-        numLabel.textContent = `${String(q).padStart(2, '0')}.`;
-        row.appendChild(numLabel);
+        const numBadge = document.createElement('span');
+        numBadge.className = 'font-display font-extrabold text-sm w-8 text-center py-1 rounded bg-navy text-cream shrink-0';
+        numBadge.textContent = String(q).padStart(2, '0');
+        card.appendChild(numBadge);
 
         const btnWrap = document.createElement('div');
-        btnWrap.className = 'flex gap-1.5';
+        btnWrap.className = 'flex gap-1.5 flex-1 justify-end';
 
         opts.forEach(letter => {
-          const b = document.createElement('button');
-          const isSelected = currentAns === letter;
-          b.type = 'button';
-          b.className = `w-8 h-8 rounded-full border-2 border-navy font-display font-bold text-xs transition-all ${
-            isSelected ? 'bg-navy text-skyNeo shadow-neoSm scale-105' : 'bg-white text-navy hover:bg-skySoft'
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          const selected = currentKey === letter;
+          btn.className = `w-8 h-8 rounded-full border-2 border-navy font-display font-bold text-xs transition-transform active:scale-95 ${
+            selected ? 'bg-skyNeo text-navy shadow-neoSm' : 'bg-white text-navy hover:bg-skySoft/60'
           }`;
-          b.textContent = letter;
-          b.onclick = () => {
-            state.config.answerKey[q] = letter;
+          btn.textContent = letter;
+          btn.onclick = () => {
+            state.config.answerKey[q] = selected ? '' : letter;
             renderAnswerKeyGrid();
           };
-          btnWrap.appendChild(b);
+          btnWrap.appendChild(btn);
         });
 
-        row.appendChild(btnWrap);
-        grid.appendChild(row);
+        card.appendChild(btnWrap);
+        grid.appendChild(card);
       }
 
       const badge = document.getElementById('keyProgressBadge');
@@ -1195,29 +1153,89 @@
       }`;
     }
 
+    // Config button listeners
+    document.querySelectorAll('.opt-nis').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.digitNis = Number(btn.dataset.val);
+        syncConfigUI();
+        renderLJKCanvas();
+      });
+    });
+
+    document.querySelectorAll('.opt-q').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.numQuestions = Number(btn.dataset.val);
+        ensureDefaultAnswerKey();
+        syncConfigUI();
+        renderLJKCanvas();
+      });
+    });
+
+    document.querySelectorAll('.opt-type').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.optionType = btn.dataset.val;
+        ensureDefaultAnswerKey();
+        syncConfigUI();
+        renderLJKCanvas();
+      });
+    });
+
+    document.querySelectorAll('.opt-col').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.config.columns = Number(btn.dataset.val);
+        syncConfigUI();
+        renderLJKCanvas();
+      });
+    });
+
+    document.getElementById('btnSaveKop').addEventListener('click', () => {
+      readKopInputs();
+      saveConfigToFirestore();
+      renderLJKCanvas();
+    });
+
+    document.getElementById('btnSaveFormat').addEventListener('click', () => {
+      saveConfigToFirestore();
+      renderLJKCanvas();
+    });
+
+    document.getElementById('btnSaveKeys').addEventListener('click', () => {
+      saveConfigToFirestore();
+    });
+
     document.getElementById('btnRandomKeys').addEventListener('click', () => {
       const opts = getOptionLetters(state.config.optionType);
       for (let q = 1; q <= state.config.numQuestions; q++) {
         state.config.answerKey[q] = opts[Math.floor(Math.random() * opts.length)];
       }
       renderAnswerKeyGrid();
-      showToast("Kunci jawaban diisi secara acak.", "info");
+      saveConfigToFirestore(true);
+      showToast("Kunci jawaban acak berhasil diisi!", "info");
     });
 
     document.getElementById('btnClearKeys').addEventListener('click', () => {
       state.config.answerKey = {};
       renderAnswerKeyGrid();
-      showToast("Semua kunci jawaban dikosongkan.", "warning");
+      showToast("Semua kunci jawaban direset.", "warning");
     });
 
     // ============================================================
-    // 6. HIGH-RES A4 LJK CANVAS GENERATOR + PNG & PDF EXPORT
+    // 6. LJK A4 CANVAS GENERATOR & EKSPOR PNG / PDF
     // ============================================================
+    function drawFiducial(ctx, cx, cy) {
+      // Outer 46x46 black square centered at (cx, cy)
+      ctx.fillStyle = '#0B1D3A';
+      ctx.fillRect(cx - 23, cy - 23, 46, 46);
+      // Inner white square 28x28
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(cx - 14, cy - 14, 28, 28);
+      // Center black dot 14x14 (helps OMR fiducial detector confirm target)
+      ctx.fillStyle = '#0B1D3A';
+      ctx.fillRect(cx - 7, cy - 7, 14, 14);
+    }
+
     function renderLJKCanvas() {
       const canvas = document.getElementById('ljkCanvas');
-      if (!canvas) return;
-
-      // A4 proportions at 150 DPI: 1240 x 1754 px
       const W = 1240;
       const H = 1754;
       canvas.width = W;
@@ -1226,142 +1244,121 @@
       const c = state.config;
       const opts = getOptionLetters(c.optionType);
 
-      // 1. Crisp White Paper Background
+      // White A4 background
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, W, H);
 
-      // 2. Four Corner Fiducial Alignment Markers (for OMR Camera Scanning)
-      const drawFiducial = (x, y) => {
-        ctx.fillStyle = '#0B1D3A';
-        ctx.fillRect(x, y, 42, 42);
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(x + 9, y + 9, 24, 24);
-        ctx.fillStyle = '#0B1D3A';
-        ctx.fillRect(x + 15, y + 15, 12, 12);
-      };
-      drawFiducial(42, 42);
-      drawFiducial(W - 84, 42);
-      drawFiducial(42, H - 84);
-      drawFiducial(W - 84, H - 84);
+      // 4 Corner Fiducial Markers (exact coordinates matching Local OMR)
+      drawFiducial(ctx, 63, 63);
+      drawFiducial(ctx, W - 63, 63);
+      drawFiducial(ctx, 63, H - 63);
+      drawFiducial(ctx, W - 63, H - 63);
 
-      // Safe content bounds
       const left = 105;
-      const right = W - 105;
-      const contentW = right - left; // 1030px
+      const contentW = W - 210; // 1030
 
-      // 3. KOP HEADER BOX
+      // ---- KOP HEADER BOX ----
       ctx.strokeStyle = '#0B1D3A';
       ctx.lineWidth = 4;
-      ctx.strokeRect(left, 60, contentW, 150);
+      ctx.strokeRect(left, 44, contentW, 166);
 
-      // Accent top bar inside KOP
       ctx.fillStyle = '#0B1D3A';
-      ctx.fillRect(left, 60, contentW, 38);
+      ctx.fillRect(left, 44, contentW, 44);
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 20px "Space Grotesk", sans-serif';
+      ctx.font = '800 22px "Space Grotesk", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('LEMBAR JAWABAN KOMPUTER (LJK) — PILIHAN GANDA', W / 2, 86);
+      ctx.textBaseline = 'middle';
+      ctx.fillText('LEMBAR JAWABAN KOMPUTER (LJK) — PILIHAN GANDA', W / 2, 66);
 
       ctx.fillStyle = '#0B1D3A';
-      ctx.font = '800 30px "Space Grotesk", sans-serif';
-      ctx.fillText((c.schoolName || 'NAMA SEKOLAH').toUpperCase(), W / 2, 134);
+      ctx.font = '800 28px "Space Grotesk", sans-serif';
+      ctx.fillText((c.schoolName || 'NAMA SEKOLAH').toUpperCase(), W / 2, 118);
 
-      ctx.font = '700 22px "Inter", sans-serif';
-      ctx.fillText((c.examTitle || 'JUDUL UJIAN').toUpperCase(), W / 2, 166);
+      ctx.font = '700 20px "Inter", sans-serif';
+      ctx.fillText((c.examTitle || 'JUDUL UJIAN').toUpperCase(), W / 2, 152);
 
-      ctx.font = '600 18px "Inter", sans-serif';
-      ctx.fillText(`Mata Pelajaran: ${c.subject}   |   Kelas: ${c.className}   |   KKM: ${c.kkm}`, W / 2, 196);
+      ctx.font = '600 17px "Inter", sans-serif';
+      ctx.fillText(`Mata Pelajaran: ${c.subject}   |   Kelas: ${c.className}   |   KKM: ${c.kkm}`, W / 2, 186);
 
-      // 4. IDENTITAS SISWA (LEFT) & NIS BUBBLE GRID (RIGHT)
+      // ---- MIDDLE SECTION: IDENTITAS (LEFT) & NIS BUBBLES (RIGHT) ----
       const midTopY = 230;
-      const midH = 400;
-      const leftBoxW = 450;
-      const rightBoxX = left + leftBoxW + 20;
-      const rightBoxW = contentW - leftBoxW - 20; // 560px
+      const midH = 398;
 
-      // Left Box: Student Info & Instructions
+      // Left Identity Box
+      const leftBoxW = 450;
+      ctx.strokeStyle = '#0B1D3A';
       ctx.lineWidth = 3;
       ctx.strokeRect(left, midTopY, leftBoxW, midH);
 
       ctx.fillStyle = '#0B1D3A';
-      ctx.fillRect(left, midTopY, leftBoxW, 34);
+      ctx.fillRect(left, midTopY, leftBoxW, 38);
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 17px "Space Grotesk", sans-serif';
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText('IDENTITAS PESERTA UJIAN', left + 14, midTopY + 23);
+      ctx.fillText('IDENTITAS PESERTA UJIAN', left + 16, midTopY + 19);
 
       ctx.fillStyle = '#0B1D3A';
-      ctx.font = '600 17px "Inter", sans-serif';
-      const drawField = (label, yPos) => {
-        ctx.fillText(label, left + 16, yPos);
-        ctx.beginPath();
-        ctx.moveTo(left + 16, yPos + 28);
-        ctx.lineTo(left + leftBoxW - 16, yPos + 28);
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      };
-      drawField('Nama Lengkap Siswa:', midTopY + 62);
-      drawField('Kelas / Ruang:', midTopY + 124);
-      drawField('Tanggal Ujian:', midTopY + 186);
+      const fields = [
+        { label: 'Nama Lengkap:', y: midTopY + 68 },
+        { label: 'Kelas / Ruang:', y: midTopY + 132 },
+        { label: 'Tanggal Ujian:', y: midTopY + 196 }
+      ];
+      fields.forEach(f => {
+        ctx.font = '700 15px "Inter", sans-serif';
+        ctx.fillText(f.label, left + 16, f.y);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(left + 16, f.y + 12, leftBoxW - 32, 34);
+      });
 
-      // Instructions Box inside left box
-      ctx.fillStyle = '#F3F4F6';
-      ctx.fillRect(left + 14, midTopY + 238, leftBoxW - 28, 146);
+      // Petunjuk Pengisian inside Left Box
+      ctx.fillStyle = '#F3E9D2';
+      ctx.fillRect(left + 16, midTopY + 258, leftBoxW - 32, 122);
       ctx.strokeStyle = '#0B1D3A';
       ctx.lineWidth = 2;
-      ctx.strokeRect(left + 14, midTopY + 238, leftBoxW - 28, 146);
+      ctx.strokeRect(left + 16, midTopY + 258, leftBoxW - 32, 122);
 
       ctx.fillStyle = '#0B1D3A';
-      ctx.font = 'bold 15px "Space Grotesk", sans-serif';
-      ctx.fillText('PETUNJUK PENGISIAN:', left + 26, midTopY + 262);
-      ctx.font = '500 14px "Inter", sans-serif';
-      ctx.fillText('1. Tulis Nama & NIS pada kotak yang tersedia.', left + 26, midTopY + 286);
-      ctx.fillText('2. Hitamkan bulatan penuh dengan pensil 2B/pulpen.', left + 26, midTopY + 308);
-      ctx.fillText('3. Contoh Benar:      Contoh Salah:', left + 26, midTopY + 332);
+      ctx.font = '800 14px "Space Grotesk", sans-serif';
+      ctx.fillText('PETUNJUK PENGISIAN:', left + 28, midTopY + 280);
+      ctx.font = '500 13px "Inter", sans-serif';
+      ctx.fillText('1. Hitamkan bulatan penuh dengan pensil 2B/pulpen.', left + 28, midTopY + 305);
+      ctx.fillText('2. Jangan melipat atau mengotori 4 kotak sudut.', left + 28, midTopY + 328);
+      ctx.fillText('3. Contoh pengisian benar:', left + 28, midTopY + 353);
 
-      // Correct filled circle example
+      // Correct bubble example
       ctx.beginPath();
-      ctx.arc(left + 162, midTopY + 327, 9, 0, Math.PI * 2);
+      ctx.arc(left + 230, midTopY + 352, 10, 0, Math.PI * 2);
+      ctx.fillStyle = '#0B1D3A';
       ctx.fill();
-      // Wrong crossed circle example
-      ctx.beginPath();
-      ctx.arc(left + 292, midTopY + 327, 9, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(left + 286, midTopY + 321);
-      ctx.lineTo(left + 298, midTopY + 333);
-      ctx.moveTo(left + 298, midTopY + 321);
-      ctx.lineTo(left + 286, midTopY + 333);
-      ctx.stroke();
 
-      ctx.fillText('4. Jangan melipat atau mengotori 4 kotak sudut.', left + 26, midTopY + 362);
-
-      // Right Box: NIS Bubble Grid
+      // Right NIS Bubble Box (exact coordinates matching scanLJKLocally)
+      const rightBoxX = left + 450 + 20; // 575
+      const rightBoxW = contentW - 450 - 20; // 560
+      ctx.strokeStyle = '#0B1D3A';
       ctx.lineWidth = 3;
       ctx.strokeRect(rightBoxX, midTopY, rightBoxW, midH);
+
       ctx.fillStyle = '#0B1D3A';
-      ctx.fillRect(rightBoxX, midTopY, rightBoxW, 34);
+      ctx.fillRect(rightBoxX, midTopY, rightBoxW, 38);
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 17px "Space Grotesk", sans-serif';
+      ctx.font = '700 16px "Space Grotesk", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`NOMOR INDUK SISWA (NIS — ${c.digitNis} DIGIT)`, rightBoxX + rightBoxW / 2, midTopY + 23);
+      ctx.fillText(`NOMOR INDUK SISWA (NIS — ${c.digitNis} DIGIT)`, rightBoxX + rightBoxW / 2, midTopY + 19);
 
       const digits = Number(c.digitNis);
-      const nisInnerPad = 24;
-      const nisAreaW = rightBoxW - nisInnerPad * 2;
-      const colStep = Math.min(50, nisAreaW / digits);
+      const colStep = Math.min(50, (rightBoxW - 48) / digits);
       const nisStartX = rightBoxX + (rightBoxW - colStep * digits) / 2;
       const boxY = midTopY + 46;
-      const boxSize = Math.min(34, colStep - 8);
 
       for (let d = 0; d < digits; d++) {
         const cx = nisStartX + d * colStep + colStep / 2;
-        // Write-in square box
+
+        // Top write-in digit square
         ctx.strokeStyle = '#0B1D3A';
         ctx.lineWidth = 2;
-        ctx.strokeRect(cx - boxSize / 2, boxY, boxSize, 32);
+        ctx.strokeRect(cx - 14, boxY, 28, 30);
 
-        // 0 - 9 bubbles vertically
+        // 0-9 bubbles
         for (let num = 0; num <= 9; num++) {
           const cy = boxY + 52 + num * 30;
           ctx.beginPath();
@@ -1370,41 +1367,36 @@
           ctx.strokeStyle = '#0B1D3A';
           ctx.stroke();
 
-          ctx.fillStyle = '#0B1D3A';
-          ctx.font = '600 13px "Inter", sans-serif';
+          ctx.fillStyle = '#475569';
+          ctx.font = '700 12px "Inter", sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(String(num), cx, cy + 0.5);
         }
       }
-      ctx.textBaseline = 'alphabetic';
 
-      // 5. PILIHAN GANDA SECTION
+      // ---- MULTIPLE CHOICE ANSWERS SECTION (exact coordinates matching scanLJKLocally) ----
       const pgTopY = 650;
       const pgH = 980;
-      ctx.lineWidth = 3;
       ctx.strokeStyle = '#0B1D3A';
+      ctx.lineWidth = 3.5;
       ctx.strokeRect(left, pgTopY, contentW, pgH);
 
       ctx.fillStyle = '#0B1D3A';
-      ctx.fillRect(left, pgTopY, contentW, 38);
+      ctx.fillRect(left, pgTopY, contentW, 42);
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 18px "Space Grotesk", sans-serif';
+      ctx.font = '800 18px "Space Grotesk", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`JAWABAN PILIHAN GANDA (${c.numQuestions} SOAL — OPSI ${c.optionType})`, W / 2, pgTopY + 25);
+      ctx.fillText(`JAWABAN PILIHAN GANDA (${c.numQuestions} SOAL • OPSI ${c.optionType})`, W / 2, pgTopY + 21);
 
-      // Compute dynamic column geometry
       const numCols = Number(c.columns);
       const totalQ = Number(c.numQuestions);
       const rowsPerCol = Math.ceil(totalQ / numCols);
       const innerTop = pgTopY + 58;
       const innerH = pgH - 76;
       const rowH = Math.min(48, innerH / rowsPerCol);
-
       const colGap = 20;
       const singleColW = (contentW - 40 - colGap * (numCols - 1)) / numCols;
-
-      // Dynamic bubble sizing to guarantee zero overlap even at 4 columns x 5 options
       const numLabelW = 42;
       const bubbleAreaW = singleColW - numLabelW - 12;
       const bubbleStep = bubbleAreaW / opts.length;
@@ -1413,10 +1405,15 @@
       for (let col = 0; col < numCols; col++) {
         const colX = left + 20 + col * (singleColW + colGap);
 
-        // Subtle column divider box
-        ctx.strokeStyle = '#CBD5E1';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(colX, innerTop - 10, singleColW, rowsPerCol * rowH + 14);
+        // Subtle column divider
+        if (col > 0) {
+          ctx.beginPath();
+          ctx.moveTo(colX - colGap / 2, pgTopY + 52);
+          ctx.lineTo(colX - colGap / 2, pgTopY + pgH - 18);
+          ctx.strokeStyle = '#CBD5E1';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
 
         for (let r = 0; r < rowsPerCol; r++) {
           const qNum = col * rowsPerCol + r + 1;
@@ -1424,20 +1421,20 @@
 
           const cy = innerTop + r * rowH + rowH / 2;
 
-          // Zebra highlight every 5th row for easy tracking
-          if (qNum % 5 === 0) {
+          // Zebra row subtle tint
+          if (r % 2 === 1) {
             ctx.fillStyle = '#F8FAFC';
-            ctx.fillRect(colX + 2, cy - rowH / 2 + 2, singleColW - 4, rowH - 4);
+            ctx.fillRect(colX, cy - rowH / 2 + 2, singleColW, rowH - 4);
           }
 
-          // Question Number
+          // Question number
           ctx.fillStyle = '#0B1D3A';
-          ctx.font = '700 16px "Space Grotesk", sans-serif';
+          ctx.font = '800 16px "Space Grotesk", sans-serif';
           ctx.textAlign = 'right';
           ctx.textBaseline = 'middle';
-          ctx.fillText(`${String(qNum).padStart(2, '0')}.`, colX + numLabelW - 6, cy);
+          ctx.fillText(`${String(qNum).padStart(2, '0')}.`, colX + numLabelW - 8, cy);
 
-          // Option Bubbles
+          // Option bubbles
           opts.forEach((letter, idx) => {
             const bx = colX + numLabelW + idx * bubbleStep + bubbleStep / 2;
             ctx.beginPath();
@@ -1446,24 +1443,20 @@
             ctx.strokeStyle = '#0B1D3A';
             ctx.stroke();
 
-            ctx.fillStyle = '#0B1D3A';
-            ctx.font = `700 ${Math.round(bubbleR * 1.05)}px "Inter", sans-serif`;
+            ctx.fillStyle = '#475569';
+            ctx.font = '700 13px "Space Grotesk", sans-serif';
             ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
             ctx.fillText(letter, bx, cy + 0.5);
           });
         }
       }
 
-      // 6. FOOTER METADATA
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = '#475569';
-      ctx.font = '600 14px "Space Grotesk", sans-serif';
+      // Footer note
+      ctx.fillStyle = '#64748B';
+      ctx.font = '600 13px "Inter", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(
-        `BRUTALGRADE OMR SHEET  •  NIS: ${c.digitNis} Digit  •  Soal: ${c.numQuestions}  •  Opsi: ${c.optionType}  •  Kolom: ${c.columns}`,
-        W / 2,
-        H - 52
-      );
+      ctx.fillText('BrutalGrade OMR Sheet — Pastikan 4 kotak penanda sudut terlihat utuh saat memindai.', W / 2, H - 56);
     }
 
     // Export LJK as PNG
@@ -1473,31 +1466,26 @@
       const link = document.createElement('a');
       const safeName = `${state.config.subject}_${state.config.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
       link.download = `LJK_${safeName}.png`;
-      link.href = canvas.toDataURL('image/png', 1.0);
+      link.href = canvas.toDataURL('image/png');
       link.click();
       showToast("Lembar Jawaban (PNG) berhasil diunduh!", "success");
     });
 
     // Export LJK as A4 PDF
     document.getElementById('btnDownloadPDF').addEventListener('click', () => {
-      try {
-        renderLJKCanvas();
-        const canvas = document.getElementById('ljkCanvas');
-        const imgData = canvas.toDataURL('image/png', 1.0);
-        const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
-        const safeName = `${state.config.subject}_${state.config.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-        pdf.save(`LJK_${safeName}.pdf`);
-        showToast("Lembar Jawaban (PDF A4) berhasil diunduh!", "success");
-      } catch (err) {
-        console.error("PDF export error:", err);
-        showToast("Gagal mengekspor PDF.", "error");
-      }
+      renderLJKCanvas();
+      const canvas = document.getElementById('ljkCanvas');
+      const imgData = canvas.toDataURL('image/jpeg', 0.96);
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+      const safeName = `${state.config.subject}_${state.config.className}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+      pdf.save(`LJK_${safeName}.pdf`);
+      showToast("Lembar Jawaban (PDF A4) berhasil diunduh!", "success");
     });
 
     // ============================================================
-    // 7. PINDAI KAMERA, UPLOAD FOTO & GEMINI VISION OMR
+    // 7. PINDAI KAMERA, UPLOAD FOTO & LOCAL OMR ENGINE (TANPA AI)
     // ============================================================
     function updateScanSummaryBadge() {
       const c = state.config;
@@ -1544,7 +1532,7 @@
       const ctx = capCanvas.getContext('2d');
       ctx.drawImage(video, 0, 0, capCanvas.width, capCanvas.height);
 
-      const dataUrl = capCanvas.toDataURL('image/jpeg', 0.88);
+      const dataUrl = capCanvas.toDataURL('image/jpeg', 0.92);
       stopCamera();
       showCapturedImageAndScan(dataUrl);
     });
@@ -1562,221 +1550,510 @@
       e.target.value = '';
     });
 
-    // Normalize any image (PNG, WebP, or large camera photo) to a clean, compressed JPEG
-    function normalizeImageToJpeg(dataUrl, maxDimension = 1600) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-          let { width, height } = img;
-          if (width > maxDimension || height > maxDimension) {
-            if (width >= height) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            } else {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          // Fill white background so transparent PNGs remain legible
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-          const normalizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          resolve(normalizedDataUrl.split(',')[1]);
-        };
-        img.onerror = () => reject(new Error("Gagal memuat file gambar."));
-        img.src = dataUrl;
-      });
-    }
+    // Sensitivity slider listener
+    document.getElementById('omrSensitivity').addEventListener('input', (e) => {
+      const val = Number(e.target.value);
+      state.omrThreshold = val / 100;
+      const label = val <= 32 ? 'Tinggi (Pensil Tipis)' : val >= 48 ? 'Ketat (Pulpen Tebal)' : 'Normal';
+      document.getElementById('omrSensitivityVal').textContent = `${label} (${val}%)`;
+    });
 
     async function showCapturedImageAndScan(dataUrl) {
+      state.capturedDataUrl = dataUrl;
       const img = document.getElementById('scannedPreviewImg');
       img.src = dataUrl;
       document.getElementById('imagePreviewContainer').classList.remove('hidden');
-
-      try {
-        // Compress & convert to valid JPEG base64 before sending to Gemini Vision
-        state.capturedBase64 = await normalizeImageToJpeg(dataUrl);
-        await analyzeLJKImageWithGemini(state.capturedBase64);
-      } catch (err) {
-        console.error("Image normalization error:", err);
-        showToast("Format gambar tidak dapat dibaca. Coba foto lain.", "error");
-      }
+      await scanLJKLocally(dataUrl);
     }
 
     document.getElementById('btnProcessImage').addEventListener('click', () => {
-      if (state.capturedBase64) analyzeLJKImageWithGemini(state.capturedBase64);
+      if (state.capturedDataUrl) scanLJKLocally(state.capturedDataUrl);
     });
 
     document.getElementById('btnClearPreview').addEventListener('click', () => {
-      state.capturedBase64 = null;
+      state.capturedDataUrl = null;
       document.getElementById('imagePreviewContainer').classList.add('hidden');
       document.getElementById('scanResultCard').classList.add('hidden');
+      document.getElementById('omrDetectBadge').classList.add('hidden');
     });
 
-    // Exponential backoff fetch helper with network retry protection
-    async function fetchWithRetry(url, options, maxRetries = 4) {
-      let delay = 1000;
-      let lastError = null;
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-          const res = await fetch(url, options);
-          if (res.ok) return res;
-          if (res.status === 429 || res.status >= 500) {
-            await new Promise(r => setTimeout(r, delay));
-            delay *= 2;
-            continue;
-          }
-          return res;
-        } catch (err) {
-          lastError = err;
-          await new Promise(r => setTimeout(r, delay));
-          delay *= 2;
+    // Compute Otsu automatic binarization threshold from grayscale array
+    function computeOtsuThreshold(gray) {
+      const hist = new Int32Array(256);
+      for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+      const total = gray.length;
+      let sum = 0;
+      for (let t = 0; t < 256; t++) sum += t * hist[t];
+
+      let sumB = 0, wB = 0, maxVar = 0, threshold = 140;
+      for (let t = 0; t < 256; t++) {
+        wB += hist[t];
+        if (wB === 0) continue;
+        const wF = total - wB;
+        if (wF === 0) break;
+        sumB += t * hist[t];
+        const mB = sumB / wB;
+        const mF = (sum - sumB) / wF;
+        const betweenVar = wB * wF * (mB - mF) * (mB - mF);
+        if (betweenVar > maxVar) {
+          maxVar = betweenVar;
+          threshold = t;
         }
       }
-      throw lastError || new Error("API gagal merespons setelah beberapa percobaan.");
+      return Math.min(215, Math.max(70, threshold));
     }
 
-    // Safely parse JSON even if model wraps output in markdown fences
-    function safeParseJsonText(rawText) {
-      let cleaned = String(rawText || '').trim();
-      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-      try {
-        return JSON.parse(cleaned);
-      } catch (_) {
-        const start = cleaned.indexOf('{');
-        const end = cleaned.lastIndexOf('}');
-        if (start !== -1 && end !== -1 && end > start) {
-          return JSON.parse(cleaned.slice(start, end + 1));
-        }
-        throw new Error("Format respons AI tidak valid.");
-      }
-    }
+    // Detect the 4 corner fiducial squares on the binary image
+    function detectCornerFiducials(gray, w, h, threshold) {
+      const visited = new Uint8Array(w * h);
+      const minSide = Math.max(8, Math.round(w * 0.014));
+      const maxSide = Math.round(w * 0.11);
 
-    // Call Gemini Vision API (gemini-3-flash-preview) with Structured JSON Output + Fallback
-    async function analyzeLJKImageWithGemini(base64Data) {
-      const overlay = document.getElementById('scanLoadingOverlay');
-      overlay.classList.remove('hidden');
+      const searchCorner = (x0, y0, x1, y1, cornerX, cornerY) => {
+        let best = null;
+        let bestScore = -Infinity;
+        const queue = [];
 
-      const opts = getOptionLetters(state.config.optionType);
-      const prompt = `Kamu adalah sistem Optical Mark Recognition (OMR) yang akurat untuk memeriksa Lembar Jawaban Komputer (LJK) Pilihan Ganda berbasis kertas.
-Tugasmu:
-1. Baca Nama Lengkap Siswa (jika tidak terlihat/kosong, isi "Siswa Tanpa Nama").
-2. Baca Nomor Induk Siswa (NIS) sejumlah ${state.config.digitNis} digit dari kotak tulisan atau bulatan yang dihitamkan (jika kosong, isi "").
-3. Periksa soal nomor 1 sampai ${state.config.numQuestions}. Untuk setiap nomor, tentukan huruf opsi (${opts.join(', ')}) yang paling jelas dihitamkan/disilang/dilingkari. Jika kosong atau tidak ada tanda, isi string kosong "".
-Kembalikan HANYA objek JSON valid dengan struktur:
-{"studentName": "...", "nis": "...", "answers": [{"number": 1, "answer": "A"}, ...]}`;
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const idx = y * w + x;
+            if (visited[idx] || gray[idx] >= threshold) continue;
 
-      const buildPayload = (useSchema) => {
-        const generationConfig = {
-          responseMimeType: "application/json",
-          temperature: 0.1
-        };
-        if (useSchema) {
-          generationConfig.responseSchema = {
-            type: "OBJECT",
-            properties: {
-              studentName: { type: "STRING" },
-              nis: { type: "STRING" },
-              answers: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    number: { type: "INTEGER" },
-                    answer: { type: "STRING" }
-                  },
-                  required: ["number", "answer"]
+            // BFS connected component
+            visited[idx] = 1;
+            queue.length = 0;
+            queue.push(idx);
+            let head = 0;
+            let minX = x, maxX = x, minY = y, maxY = y, area = 0;
+
+            while (head < queue.length) {
+              const curr = queue[head++];
+              const cx = curr % w;
+              const cy = (curr - cx) / w;
+              area++;
+              if (cx < minX) minX = cx;
+              if (cx > maxX) maxX = cx;
+              if (cy < minY) minY = cy;
+              if (cy > maxY) maxY = cy;
+
+              if (area > maxSide * maxSide * 2) break;
+
+              const neighbors = [
+                cx > x0 ? curr - 1 : -1,
+                cx + 1 < x1 ? curr + 1 : -1,
+                cy > y0 ? curr - w : -1,
+                cy + 1 < y1 ? curr + w : -1
+              ];
+              for (let k = 0; k < 4; k++) {
+                const n = neighbors[k];
+                if (n >= 0 && !visited[n] && gray[n] < threshold) {
+                  visited[n] = 1;
+                  queue.push(n);
                 }
               }
-            },
-            required: ["studentName", "nis", "answers"]
-          };
+            }
+
+            const bw = maxX - minX + 1;
+            const bh = maxY - minY + 1;
+            if (bw < minSide || bh < minSide || bw > maxSide || bh > maxSide) continue;
+
+            const aspect = bw / bh;
+            if (aspect < 0.65 || aspect > 1.55) continue;
+
+            const fillRatio = area / (bw * bh);
+            if (fillRatio < 0.35 || fillRatio > 0.96) continue;
+
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
+            // Bonus if center dot is dark (our fiducial has a center square)
+            const centerDark = gray[Math.round(centerY) * w + Math.round(centerX)] < threshold ? 30 : 0;
+            const distCorner = Math.hypot(centerX - cornerX, centerY - cornerY);
+            const squareness = 1 - Math.abs(1 - aspect);
+            const score = squareness * 60 + centerDark - (distCorner / Math.hypot(w, h)) * 120;
+
+            if (score > bestScore) {
+              bestScore = score;
+              best = { x: centerX, y: centerY, bw, bh };
+            }
+          }
         }
-        return {
-          contents: [{
-            role: "user",
-            parts: [
-              { text: prompt },
-              { inlineData: { mimeType: "image/jpeg", data: base64Data } }
-            ]
-          }],
-          generationConfig
-        };
+        return best;
       };
 
-      const apiKey = "";
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+      const rx = Math.floor(w * 0.32);
+      const ry = Math.floor(h * 0.32);
+      const tl = searchCorner(0, 0, rx, ry, 0, 0);
+      const tr = searchCorner(w - rx, 0, w, ry, w, 0);
+      const bl = searchCorner(0, h - ry, rx, h, 0, h);
+      const br = searchCorner(w - rx, h - ry, w, h, w, h);
+
+      if (!tl || !tr || !bl || !br) return null;
+
+      // Validate reasonable quadrilateral proportions
+      const topW = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+      const botW = Math.hypot(br.x - bl.x, br.y - bl.y);
+      const leftH = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+      const rightH = Math.hypot(br.x - tr.x, br.y - tr.y);
+
+      if (topW < w * 0.35 || botW < w * 0.35 || leftH < h * 0.35 || rightH < h * 0.35) {
+        return null;
+      }
+      return { tl, tr, bl, br };
+    }
+
+    // Solve 8x8 homography mapping canonical (u,v) -> source (x,y)
+    function computeHomography(srcPts, dstPts) {
+      const A = [];
+      const b = [];
+      for (let i = 0; i < 4; i++) {
+        const u = srcPts[i].x, v = srcPts[i].y;
+        const x = dstPts[i].x, y = dstPts[i].y;
+        A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]);
+        b.push(x);
+        A.push([0, 0, 0, u, v, 1, -u * y, -v * y]);
+        b.push(y);
+      }
+
+      // Gaussian elimination with partial pivoting
+      const n = 8;
+      for (let i = 0; i < n; i++) {
+        let maxRow = i;
+        for (let r = i + 1; r < n; r++) {
+          if (Math.abs(A[r][i]) > Math.abs(A[maxRow][i])) maxRow = r;
+        }
+        [A[i], A[maxRow]] = [A[maxRow], A[i]];
+        [b[i], b[maxRow]] = [b[maxRow], b[i]];
+
+        const pivot = A[i][i];
+        if (Math.abs(pivot) < 1e-10) return null;
+
+        for (let r = i + 1; r < n; r++) {
+          const factor = A[r][i] / pivot;
+          for (let c = i; c < n; c++) A[r][c] -= factor * A[i][c];
+          b[r] -= factor * b[i];
+        }
+      }
+
+      const h = new Array(n);
+      for (let i = n - 1; i >= 0; i--) {
+        let s = b[i];
+        for (let c = i + 1; c < n; c++) s -= A[i][c] * h[c];
+        h[i] = s / A[i][i];
+      }
+      return h;
+    }
+
+    function applyHomography(H, u, v) {
+      const denom = H[6] * u + H[7] * v + 1;
+      return {
+        x: (H[0] * u + H[1] * v + H[2]) / denom,
+        y: (H[3] * u + H[4] * v + H[5]) / denom
+      };
+    }
+
+    // Measure inner bubble fill ratio relative to local paper brightness
+    function measureBubbleFill(gray, w, h, cx, cy, r) {
+      const innerR = r * 0.68;
+      const outerR1 = r * 1.25;
+      const outerR2 = r * 1.65;
+
+      // Sample surrounding paper ring to adapt to uneven lighting/shadows
+      let paperSum = 0, paperCount = 0;
+      const yMinP = Math.max(0, Math.floor(cy - outerR2));
+      const yMaxP = Math.min(h - 1, Math.ceil(cy + outerR2));
+      const xMinP = Math.max(0, Math.floor(cx - outerR2));
+      const xMaxP = Math.min(w - 1, Math.ceil(cx + outerR2));
+
+      for (let y = yMinP; y <= yMaxP; y += 2) {
+        for (let x = xMinP; x <= xMaxP; x += 2) {
+          const d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+          if (d2 >= outerR1 * outerR1 && d2 <= outerR2 * outerR2) {
+            const val = gray[y * w + x];
+            if (val > 110) {
+              paperSum += val;
+              paperCount++;
+            }
+          }
+        }
+      }
+      const localPaper = paperCount > 8 ? paperSum / paperCount : 230;
+      const darkCutoff = localPaper * 0.72;
+
+      // Count dark pixels inside the bubble core (avoiding the printed outer circle)
+      let darkCount = 0, totalCount = 0;
+      const yMin = Math.max(0, Math.floor(cy - innerR));
+      const yMax = Math.min(h - 1, Math.ceil(cy + innerR));
+      const xMin = Math.max(0, Math.floor(cx - innerR));
+      const xMax = Math.min(w - 1, Math.ceil(cx + innerR));
+
+      for (let y = yMin; y <= yMax; y++) {
+        for (let x = xMin; x <= xMax; x++) {
+          const d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+          if (d2 <= innerR * innerR) {
+            totalCount++;
+            if (gray[y * w + x] < darkCutoff) darkCount++;
+          }
+        }
+      }
+      return totalCount > 0 ? darkCount / totalCount : 0;
+    }
+
+    // Main Local OMR Scanner (100% Offline, Graded Directly Against Answer Key)
+    async function scanLJKLocally(dataUrl) {
+      const overlay = document.getElementById('scanLoadingOverlay');
+      const badge = document.getElementById('omrDetectBadge');
+      overlay.classList.remove('hidden');
+
+      // Allow UI spinner to paint before running pixel processing
+      await new Promise(r => setTimeout(r, 60));
 
       try {
-        let response = await fetchWithRetry(apiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(buildPayload(true))
+        const img = await new Promise((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Gagal memuat gambar LJK."));
+          el.src = dataUrl;
         });
 
-        // Fallback without strict responseSchema if request returns 400
-        if (!response.ok && response.status === 400) {
-          response = await fetchWithRetry(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildPayload(false))
-          });
+        // Step 1: Load source image onto working canvas
+        const maxDim = 1600;
+        let sw = img.width, sh = img.height;
+        if (sw > maxDim || sh > maxDim) {
+          const scale = maxDim / Math.max(sw, sh);
+          sw = Math.round(sw * scale);
+          sh = Math.round(sh * scale);
         }
 
-        const result = await response.json();
-        if (!response.ok) {
-          const apiErrMsg = result?.error?.message || `HTTP ${response.status}`;
-          throw new Error(apiErrMsg);
+        const srcCanvas = document.createElement('canvas');
+        srcCanvas.width = sw;
+        srcCanvas.height = sh;
+        const srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
+        srcCtx.fillStyle = '#FFFFFF';
+        srcCtx.fillRect(0, 0, sw, sh);
+        srcCtx.drawImage(img, 0, 0, sw, sh);
+
+        const srcImgData = srcCtx.getImageData(0, 0, sw, sh);
+        const srcData = srcImgData.data;
+        const srcGray = new Uint8Array(sw * sh);
+        for (let i = 0, p = 0; i < srcGray.length; i++, p += 4) {
+          srcGray[i] = Math.round(0.299 * srcData[p] + 0.587 * srcData[p + 1] + 0.114 * srcData[p + 2]);
         }
 
-        const parts = result?.candidates?.[0]?.content?.parts || [];
-        const jsonText = parts.map(p => p.text || '').join('').trim();
+        // Step 2: Detect 4 fiducial markers and compute perspective transform
+        const otsu = computeOtsuThreshold(srcGray);
+        const fiducials = detectCornerFiducials(srcGray, sw, sh, otsu);
 
-        if (!jsonText) throw new Error("Respons AI kosong.");
-        const parsed = safeParseJsonText(jsonText);
+        const W = 1240, H = 1754;
+        const canonicalFiducials = [
+          { x: 63, y: 63 },
+          { x: W - 63, y: 63 },
+          { x: 63, y: H - 63 },
+          { x: W - 63, y: H - 63 }
+        ];
+
+        let Hmat = null;
+        let fiducialFound = false;
+        if (fiducials) {
+          Hmat = computeHomography(canonicalFiducials, [
+            fiducials.tl, fiducials.tr, fiducials.bl, fiducials.br
+          ]);
+          fiducialFound = !!Hmat;
+        }
+
+        // Step 3: Warp source photo into canonical A4 (1240 x 1754) canvas
+        const warpCanvas = document.createElement('canvas');
+        warpCanvas.width = W;
+        warpCanvas.height = H;
+        const warpCtx = warpCanvas.getContext('2d', { willReadFrequently: true });
+
+        if (Hmat) {
+          const outImg = warpCtx.createImageData(W, H);
+          const out = outImg.data;
+          for (let v = 0; v < H; v++) {
+            for (let u = 0; u < W; u++) {
+              const denom = Hmat[6] * u + Hmat[7] * v + 1;
+              const sx = Math.round((Hmat[0] * u + Hmat[1] * v + Hmat[2]) / denom);
+              const sy = Math.round((Hmat[3] * u + Hmat[4] * v + Hmat[5]) / denom);
+              const dstIdx = (v * W + u) * 4;
+              if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
+                const srcIdx = (sy * sw + sx) * 4;
+                out[dstIdx] = srcData[srcIdx];
+                out[dstIdx + 1] = srcData[srcIdx + 1];
+                out[dstIdx + 2] = srcData[srcIdx + 2];
+                out[dstIdx + 3] = 255;
+              } else {
+                out[dstIdx] = 255; out[dstIdx + 1] = 255; out[dstIdx + 2] = 255; out[dstIdx + 3] = 255;
+              }
+            }
+          }
+          warpCtx.putImageData(outImg, 0, 0);
+        } else {
+          // Fallback: direct proportional stretch if corners were cropped
+          warpCtx.fillStyle = '#FFFFFF';
+          warpCtx.fillRect(0, 0, W, H);
+          warpCtx.drawImage(srcCanvas, 0, 0, W, H);
+        }
+
+        // Extract grayscale of warped canonical A4 sheet
+        const warpData = warpCtx.getImageData(0, 0, W, H).data;
+        const warpGray = new Uint8Array(W * H);
+        for (let i = 0, p = 0; i < warpGray.length; i++, p += 4) {
+          warpGray[i] = Math.round(0.299 * warpData[p] + 0.587 * warpData[p + 1] + 0.114 * warpData[p + 2]);
+        }
+
+        // Step 4: Read NIS Bubbles using exact LJK layout geometry
+        const c = state.config;
+        const opts = getOptionLetters(c.optionType);
+        const minFill = state.omrThreshold;
+        const minDelta = 0.12;
+
+        const left = 105;
+        const contentW = W - 210; // 1030
+        const midTopY = 230;
+        const rightBoxX = left + 450 + 20; // 575
+        const rightBoxW = contentW - 450 - 20; // 560
+        const digits = Number(c.digitNis);
+        const colStep = Math.min(50, (rightBoxW - 48) / digits);
+        const nisStartX = rightBoxX + (rightBoxW - colStep * digits) / 2;
+        const boxY = midTopY + 46;
+
+        let detectedNis = '';
+        for (let d = 0; d < digits; d++) {
+          const cx = nisStartX + d * colStep + colStep / 2;
+          const scores = [];
+          for (let num = 0; num <= 9; num++) {
+            const cy = boxY + 52 + num * 30;
+            scores.push({ num, fill: measureBubbleFill(warpGray, W, H, cx, cy, 11), cy });
+          }
+          const sorted = [...scores].sort((a, b) => b.fill - a.fill);
+          const best = sorted[0];
+          const median = sorted[Math.floor(sorted.length / 2)].fill;
+
+          if (best.fill >= minFill && (best.fill - median) >= minDelta) {
+            detectedNis += String(best.num);
+            // Draw cyan ring on detected NIS bubble
+            warpCtx.beginPath();
+            warpCtx.arc(cx, best.cy, 13, 0, Math.PI * 2);
+            warpCtx.lineWidth = 4;
+            warpCtx.strokeStyle = '#0284C7';
+            warpCtx.stroke();
+          } else {
+            detectedNis += '0';
+          }
+        }
+
+        // Step 5: Read Multiple Choice Bubbles & Grade Directly Against Answer Key
+        const pgTopY = 650;
+        const pgH = 980;
+        const numCols = Number(c.columns);
+        const totalQ = Number(c.numQuestions);
+        const rowsPerCol = Math.ceil(totalQ / numCols);
+        const innerTop = pgTopY + 58;
+        const innerH = pgH - 76;
+        const rowH = Math.min(48, innerH / rowsPerCol);
+        const colGap = 20;
+        const singleColW = (contentW - 40 - colGap * (numCols - 1)) / numCols;
+        const numLabelW = 42;
+        const bubbleAreaW = singleColW - numLabelW - 12;
+        const bubbleStep = bubbleAreaW / opts.length;
+        const bubbleR = Math.min(14, Math.max(10.5, bubbleStep * 0.34));
 
         const ansMap = {};
-        for (let q = 1; q <= state.config.numQuestions; q++) ansMap[q] = '';
-        if (Array.isArray(parsed.answers)) {
-          parsed.answers.forEach(item => {
-            const num = Number(item.number);
-            const val = (item.answer || '').toUpperCase().trim();
-            if (num >= 1 && num <= state.config.numQuestions && opts.includes(val)) {
-              ansMap[num] = val;
+        let filledCount = 0;
+
+        for (let col = 0; col < numCols; col++) {
+          const colX = left + 20 + col * (singleColW + colGap);
+          for (let r = 0; r < rowsPerCol; r++) {
+            const qNum = col * rowsPerCol + r + 1;
+            if (qNum > totalQ) break;
+
+            const cy = innerTop + r * rowH + rowH / 2;
+            const keyAns = c.answerKey[qNum] || '';
+            const rowScores = [];
+
+            opts.forEach((letter, idx) => {
+              const bx = colX + numLabelW + idx * bubbleStep + bubbleStep / 2;
+              const fill = measureBubbleFill(warpGray, W, H, bx, cy, bubbleR);
+              rowScores.push({ letter, fill, bx });
+            });
+
+            const sorted = [...rowScores].sort((a, b) => b.fill - a.fill);
+            const best = sorted[0];
+            const baseline = sorted[sorted.length - 1].fill;
+
+            if (best.fill >= minFill && (best.fill - baseline) >= minDelta) {
+              ansMap[qNum] = best.letter;
+              filledCount++;
+
+              // Visual grading ring directly on scanned paper
+              const isCorrect = best.letter === keyAns;
+              warpCtx.beginPath();
+              warpCtx.arc(best.bx, cy, bubbleR + 3, 0, Math.PI * 2);
+              warpCtx.lineWidth = 4;
+              warpCtx.strokeStyle = isCorrect ? '#16A34A' : '#DC2626';
+              warpCtx.stroke();
+
+              // If wrong, also highlight the correct answer key in subtle blue dashed ring
+              if (!isCorrect && keyAns) {
+                const keyItem = rowScores.find(x => x.letter === keyAns);
+                if (keyItem) {
+                  warpCtx.beginPath();
+                  warpCtx.arc(keyItem.bx, cy, bubbleR + 2, 0, Math.PI * 2);
+                  warpCtx.lineWidth = 3;
+                  warpCtx.strokeStyle = '#0284C7';
+                  warpCtx.stroke();
+                }
+              }
+            } else {
+              ansMap[qNum] = '';
+              // Highlight unanswered key in amber
+              const keyItem = rowScores.find(x => x.letter === keyAns);
+              if (keyItem) {
+                warpCtx.beginPath();
+                warpCtx.arc(keyItem.bx, cy, bubbleR + 2, 0, Math.PI * 2);
+                warpCtx.lineWidth = 3;
+                warpCtx.strokeStyle = '#D97706';
+                warpCtx.stroke();
+              }
             }
-          });
-        } else if (parsed.answers && typeof parsed.answers === 'object') {
-          Object.entries(parsed.answers).forEach(([k, v]) => {
-            const num = Number(k);
-            const val = String(v || '').toUpperCase().trim();
-            if (num >= 1 && num <= state.config.numQuestions && opts.includes(val)) {
-              ansMap[num] = val;
-            }
+          }
+        }
+
+        // Draw corner fiducial confirmation markers on preview
+        if (fiducialFound) {
+          warpCtx.strokeStyle = '#16A34A';
+          warpCtx.lineWidth = 6;
+          canonicalFiducials.forEach(pt => {
+            warpCtx.strokeRect(pt.x - 26, pt.y - 26, 52, 52);
           });
         }
 
+        // Update preview image with annotated OMR result
+        document.getElementById('scannedPreviewImg').src = warpCanvas.toDataURL('image/jpeg', 0.88);
+
+        badge.classList.remove('hidden');
+        if (fiducialFound) {
+          badge.className = 'text-xs font-display font-bold text-center px-3 py-1.5 rounded-lg border-2 border-navy bg-mintNeo/70';
+          badge.textContent = `✓ 4 Penanda Sudut Terdeteksi • ${filledCount}/${totalQ} Jawaban Terbaca (Hijau: Benar, Merah: Salah, Biru: Kunci)`;
+        } else {
+          badge.className = 'text-xs font-display font-bold text-center px-3 py-1.5 rounded-lg border-2 border-navy bg-amberNeo/80';
+          badge.textContent = `⚠ Penanda sudut tidak lengkap (mode langsung) • ${filledCount}/${totalQ} Jawaban Terbaca. Pastikan 4 kotak sudut terlihat jelas.`;
+        }
+
+        // Preserve previously typed name if re-scanning the same sheet
+        const prevName = document.getElementById('scanStudentName').value.trim();
         state.currentScan = {
-          studentName: parsed.studentName || 'Siswa Tanpa Nama',
-          nis: String(parsed.nis || '').replace(/\D/g, '') || '0'.repeat(state.config.digitNis),
+          studentName: prevName || '',
+          nis: detectedNis,
           answers: ansMap
         };
 
         renderScanVerification();
-        showToast("Pemindaian LJK selesai! Silakan verifikasi hasil.", "success");
+        showToast(`Pemindaian OMR selesai! ${filledCount} jawaban dicocokkan dengan Kunci Jawaban.`, "success");
       } catch (err) {
-        console.error("Gemini scan error:", err);
-        const detail = err?.message ? ` (${err.message})` : '';
-        showToast(`Pemindaian otomatis gagal${detail}. Anda tetap bisa koreksi manual.`, "error");
-        // Still open manual verification panel so teacher isn't blocked
-        const blankMap = {};
-        for (let q = 1; q <= state.config.numQuestions; q++) blankMap[q] = '';
-        state.currentScan = { studentName: '', nis: '', answers: blankMap };
-        renderScanVerification();
+        console.error("Local OMR error:", err);
+        showToast("Gagal memproses gambar LJK. Pastikan foto jelas dan tidak buram.", "error");
       } finally {
         overlay.classList.add('hidden');
       }
